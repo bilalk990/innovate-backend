@@ -81,7 +81,7 @@ ASGI_APPLICATION = 'core.asgi.application'
 # ─── Database — MongoDB via mongoengine ───────────────────────────────────────
 DATABASES = {}
 
-MONGODB_URI = config('MONGODB_URI', default='mongodb://localhost:27017/innovaite_db')
+MONGODB_URI = config('MONGODB_URI', default='mongodb://localhost:27017/innovaite_db').strip()
 MONGODB_DB_NAME = 'innovaite_db'
 
 # CRITICAL FIX: Skip MongoDB connection during build phase or collectstatic
@@ -93,7 +93,9 @@ if not IS_MANAGEMENT_COMMAND:
             db=MONGODB_DB_NAME, 
             serverSelectionTimeoutMS=5000,
             maxPoolSize=50,
-            minPoolSize=10
+            minPoolSize=10,
+            w='majority',  # Write concern
+            j=True  # Journal
         )
         # Test connection
         mongoengine.connection.get_db().command('ping')
