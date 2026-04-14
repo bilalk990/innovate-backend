@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: innovaite_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: innovaite_db
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - innovaite_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: innovaite_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - innovaite_network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: innovaite_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/innovaite_db
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+    networks:
+      - innovaite_network
+    command: daphne -b 0.0.0.0 -p 8000 core.asgi:application
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  innovaite_network:
+    driver: bridge
