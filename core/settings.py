@@ -93,9 +93,7 @@ if not IS_MANAGEMENT_COMMAND:
             db=MONGODB_DB_NAME, 
             serverSelectionTimeoutMS=5000,
             maxPoolSize=50,
-            minPoolSize=10,
-            w='majority',  # Write concern
-            j=True  # Journal
+            minPoolSize=10
         )
         # Test connection
         mongoengine.connection.get_db().command('ping')
