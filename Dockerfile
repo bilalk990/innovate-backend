@@ -24,14 +24,17 @@ RUN pip install --upgrade pip && \
 # Copy project files
 COPY . .
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 # Create media and static directories
 RUN mkdir -p media/resumes staticfiles
 
-# Collect static files (Provide dummy secret for build time)
-RUN SECRET_KEY=dummy-secret-for-build python manage.py collectstatic --noinput || true
+# Collect static files (Ping skipped in settings.py during this command)
+RUN python manage.py collectstatic --noinput || true
 
 # Expose port
 EXPOSE 8000
 
-# Run Daphne ASGI server (Using shell form for $PORT expansion)
-CMD daphne -b 0.0.0.0 -p ${PORT:-8000} core.asgi:application
+# Run startup script
+CMD ["./start.sh"]

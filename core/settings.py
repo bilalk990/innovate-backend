@@ -81,22 +81,31 @@ DATABASES = {}
 MONGODB_URI = config('MONGODB_URI', default='mongodb://localhost:27017/innovaite_db')
 MONGODB_DB_NAME = 'innovaite_db'
 
-try:
-    import mongoengine
-    mongoengine.connect(
-        host=MONGODB_URI, 
-        db=MONGODB_DB_NAME, 
-        serverSelectionTimeoutMS=5000,
-        maxPoolSize=50,  # Connection pooling for performance
-        minPoolSize=10
-    )
-    # Test connection
-    mongoengine.connection.get_db().command('ping')
-except Exception as e:
-    if not DEBUG:
-        raise RuntimeError(f'[InnovAIte] MongoDB connection failed: {e}. Cannot start in production without DB!')
-    else:
-        warnings.warn(f'[InnovAIte] MongoDB connection failed: {e}. Start MongoDB and restart.')
+# CRITICAL FIX: Skip MongoDB connection during build phase or collectstatic
+import sys
+IS_MANAGEMENT_COMMAND = any(arg in sys.argv for arg in ['collectstatic', 'makemigrations', 'migrate', 'test'])
+
+if not IS_MANAGEMENT_COMMAND:
+    try:
+        import mongoengine
+        mongoengine.connect(
+            host=MONGODB_URI, 
+            db=MONGODB_DB_NAME, 
+            serverSelectionTimeoutMS=5000,
+            maxPoolSize=50,
+            minPoolSize=10
+        )
+        # Test connection
+        mongoengine.connection.get_db().command('ping')
+    except Exception as e:
+        if not DEBUG:
+            # In production, we usually want this to fail, 
+            # but during build $MONGODB_URI might be missing.
+            print(f"[WARNING] MongoDB connection failed: {e}")
+            if MONGODB_URI and 'localhost' not in MONGODB_URI:
+                 raise RuntimeError(f'[InnovAIte] MongoDB connection failed: {e}. Cannot start in production without DB!')
+        else:
+            warnings.warn(f'[InnovAIte] MongoDB connection failed: {e}. Start MongoDB and restart.')
 
 # ─── Django Channels ──────────────────────────────────────────────────────────
 REDIS_URL = config('REDIS_URL', default='')
