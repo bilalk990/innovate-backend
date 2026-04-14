@@ -10,8 +10,11 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY')
-if not SECRET_KEY or SECRET_KEY.startswith('django-insecure'):
+import sys
+IS_MANAGEMENT_COMMAND = any(arg in sys.argv for arg in ['collectstatic', 'makemigrations', 'migrate', 'test'])
+
+SECRET_KEY = config('SECRET_KEY', default='dummy-secret-for-build' if IS_MANAGEMENT_COMMAND else None)
+if not SECRET_KEY and not IS_MANAGEMENT_COMMAND:
     raise ValueError('SECRET_KEY must be set in .env and cannot use default insecure key!')
 
 DEBUG = config('DEBUG', default=False, cast=bool)
@@ -82,9 +85,6 @@ MONGODB_URI = config('MONGODB_URI', default='mongodb://localhost:27017/innovaite
 MONGODB_DB_NAME = 'innovaite_db'
 
 # CRITICAL FIX: Skip MongoDB connection during build phase or collectstatic
-import sys
-IS_MANAGEMENT_COMMAND = any(arg in sys.argv for arg in ['collectstatic', 'makemigrations', 'migrate', 'test'])
-
 if not IS_MANAGEMENT_COMMAND:
     try:
         import mongoengine
