@@ -34,4 +34,4 @@ RUN python manage.py collectstatic --noinput || true
 EXPOSE 8000
 
 # Run Daphne ASGI server (supports WebSockets)
-CMD ["sh", "-c", "daphne -b 0.0.0.0 -p $PORT core.asgi:application"]
+CMD daphne -b 0.0.0.0 -p $PORT core.asgi:application

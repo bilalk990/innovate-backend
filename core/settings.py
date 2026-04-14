@@ -15,7 +15,13 @@ if not SECRET_KEY or SECRET_KEY.startswith('django-insecure'):
     raise ValueError('SECRET_KEY must be set in .env and cannot use default insecure key!')
 
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = ['*']  # Temporarily allow all hosts for debugging
+
+# ─── Diagnostic Logs (Visible in Railway logs) ───────────────────────────────
+print(f"[DEBUG] ALLOWED_HOSTS: {ALLOWED_HOSTS}")
+print(f"[DEBUG] CORS_ORIGINS: {config('CORS_ALLOWED_ORIGINS', default='Not Set')}")
+print(f"[DEBUG] CSRF_ORIGINS: {config('CSRF_TRUSTED_ORIGINS', default='Not Set')}")
+print(f"[DEBUG] MONGODB_URI starts with: {config('MONGODB_URI', default='')[:20]}...")
 
 # ─── Installed Apps ───────────────────────────────────────────────────────────
 INSTALLED_APPS = [
@@ -39,12 +45,15 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # MUST be first
     'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',  # Added for stability
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',  # CRITICAL FIX: Re-enabled CSRF protection
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',  # Added for stability
+    'django.contrib.messages.middleware.MessageMiddleware',      # Added for stability
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'core.request_id_middleware.RequestIDMiddleware',  # Request ID tracing
+    'core.request_id_middleware.RequestIDMiddleware',
     'core.performance_monitor.PerformanceMiddleware',
-    'core.middleware.SecurityHeadersMiddleware',  # #49 CSP headers
+    'core.middleware.SecurityHeadersMiddleware',
 ]
 
 ROOT_URLCONF = 'core.urls'
