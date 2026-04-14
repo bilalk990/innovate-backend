@@ -152,16 +152,13 @@ AI_WARNING_THRESHOLD = config('AI_WARNING_THRESHOLD', default=50, cast=int)  # 7
 # ─── Encryption ───────────────────────────────────────────────────────────────
 ENCRYPTION_KEY = config('ENCRYPTION_KEY', default='')
 
-# CRITICAL FIX: Require explicit ENCRYPTION_KEY in production
+# CRITICAL FIX: Generate ENCRYPTION_KEY from SECRET_KEY if not provided
 if not ENCRYPTION_KEY:
-    if not DEBUG:
-        raise ValueError('[InnovAIte] ENCRYPTION_KEY must be set in .env for production!')
-    else:
-        warnings.warn('[InnovAIte] ENCRYPTION_KEY not set. Using SECRET_KEY derivation (not recommended for production).')
-        # Fallback for development only
-        import hashlib, base64
-        raw = hashlib.sha256(SECRET_KEY.encode()).digest()
-        ENCRYPTION_KEY = base64.urlsafe_b64encode(raw).decode()
+    warnings.warn('[InnovAIte] ENCRYPTION_KEY not set. Deriving from SECRET_KEY (set ENCRYPTION_KEY in production for better security).')
+    # Fallback: derive from SECRET_KEY
+    import hashlib, base64
+    raw = hashlib.sha256(SECRET_KEY.encode()).digest()
+    ENCRYPTION_KEY = base64.urlsafe_b64encode(raw).decode()
 
 # ─── Google OAuth ─────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', default='')
