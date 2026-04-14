@@ -203,6 +203,15 @@ CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
     default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174'
 ).split(',')
+
+# CRITICAL FIX: In production, if DEBUG=False but CORS_ALLOWED_ORIGINS is not set properly,
+# temporarily allow all origins to prevent lockout
+if not DEBUG and len(CORS_ALLOWED_ORIGINS) == 1 and 'localhost' in CORS_ALLOWED_ORIGINS[0]:
+    print("[WARNING] CORS_ALLOWED_ORIGINS not set for production. Allowing all origins temporarily.")
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOW_ALL_ORIGINS = DEBUG
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -216,8 +225,6 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
-# Allow all origins in development for easier testing
-CORS_ALLOW_ALL_ORIGINS = DEBUG
 
 # WebSocket CORS — defined AFTER CORS_ALLOWED_ORIGINS to avoid NameError
 CORS_ALLOW_WEBSOCKET_ORIGINS = CORS_ALLOWED_ORIGINS
