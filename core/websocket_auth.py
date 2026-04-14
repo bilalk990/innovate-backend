@@ -1,13 +1,15 @@
 import jwt
 import mongoengine
 from django.conf import settings
-from django.contrib.auth.models import AnonymousUser
 from channels.db import database_sync_to_async
-from accounts.models import User
 from urllib.parse import parse_qs
 
 @database_sync_to_async
 def get_user_from_token(token):
+    # Import here to avoid AppRegistryNotReady error
+    from django.contrib.auth.models import AnonymousUser
+    from accounts.models import User
+    
     try:
         payload = jwt.decode(
             token, settings.JWT_SECRET,
@@ -39,6 +41,9 @@ class JWTAuthMiddleware:
         self.inner = inner
 
     async def __call__(self, scope, receive, send):
+        # Import here to avoid AppRegistryNotReady error
+        from django.contrib.auth.models import AnonymousUser
+        
         query_string = parse_qs(scope['query_string'].decode())
         token = query_string.get('token', [None])[0]
 
