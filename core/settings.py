@@ -204,9 +204,9 @@ CORS_ALLOWED_ORIGINS = config(
     default='http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174'
 ).split(',')
 
-# CRITICAL FIX: In production, if DEBUG=False but CORS_ALLOWED_ORIGINS is not set properly,
+# CRITICAL FIX: In production, if DEBUG=False but CORS_ALLOWED_ORIGINS contains only localhost,
 # temporarily allow all origins to prevent lockout
-if not DEBUG and len(CORS_ALLOWED_ORIGINS) == 1 and 'localhost' in CORS_ALLOWED_ORIGINS[0]:
+if not DEBUG and all('localhost' in origin or '127.0.0.1' in origin for origin in CORS_ALLOWED_ORIGINS):
     print("[WARNING] CORS_ALLOWED_ORIGINS not set for production. Allowing all origins temporarily.")
     CORS_ALLOW_ALL_ORIGINS = True
 else:
