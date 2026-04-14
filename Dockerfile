@@ -36,5 +36,5 @@ RUN python manage.py collectstatic --noinput || true
 # Expose port
 EXPOSE 8000
 
-# Run startup script
-CMD ["./start.sh"]
+# Run startup script using shell to properly expand environment variables
+CMD ["/bin/bash", "./start.sh"]
