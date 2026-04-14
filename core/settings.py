@@ -129,8 +129,8 @@ os.makedirs(BASE_DIR / 'media' / 'resumes', exist_ok=True)
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ─── JWT ──────────────────────────────────────────────────────────────────────
-JWT_SECRET = config('JWT_SECRET')
-if not JWT_SECRET:
+JWT_SECRET = config('JWT_SECRET', default='dummy-jwt-secret-for-build' if IS_MANAGEMENT_COMMAND else None)
+if not JWT_SECRET and not IS_MANAGEMENT_COMMAND:
     raise ValueError('[InnovAIte] JWT_SECRET must be set in .env for security!')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRY_HOURS = 24
