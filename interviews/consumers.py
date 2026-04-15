@@ -179,11 +179,13 @@ class SignalingConsumer(AsyncWebsocketConsumer):
         # ── Waiting Room: Candidate re-announces they are waiting ──
         elif msg_type == 'request_admit':
             # Relay to group so recruiter (who may have just joined) sees the request
+            # CRITICAL: This should ALWAYS notify, even if notified before
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     'type': 'candidate_at_door',
                     'channel': self.channel_name,
+                    'force_notify': True,  # Force notification even if already notified
                 }
             )
 
@@ -267,8 +269,11 @@ class SignalingConsumer(AsyncWebsocketConsumer):
         # Only send to recruiters/admins (not back to the candidate who sent it)
         if event.get('channel') != self.channel_name:
             if getattr(self, 'user_role', 'candidate') in ('recruiter', 'admin'):
-                # Only send if we haven't already notified this recruiter
-                if not hasattr(self, '_candidate_notified'):
+                # Check if this is a forced notification (from request_admit)
+                force_notify = event.get('force_notify', False)
+                
+                # Only send if we haven't already notified OR if it's a forced notification
+                if force_notify or not hasattr(self, '_candidate_notified'):
                     await self.send(text_data=json.dumps({'type': 'candidate_waiting'}))
                     self._candidate_notified = True
 
