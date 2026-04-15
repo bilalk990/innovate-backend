@@ -210,9 +210,11 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
         # ── Waiting Room: Recruiter admits candidate ──
         elif msg_type == 'admit_candidate':
-            # Reset notification flag so future candidates can knock again
-            if hasattr(self, '_candidate_notified'):
-                delattr(self, '_candidate_notified')
+            # Reset notification flag for ALL recruiters in the room
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {'type': 'reset_candidate_notification'}
+            )
             # Tell candidate they are admitted (exclude recruiter via sender=self.channel_name)
             await self.channel_layer.group_send(
                 self.room_group_name,
@@ -303,3 +305,10 @@ class SignalingConsumer(AsyncWebsocketConsumer):
                 await self.send(text_data=json.dumps({'type': 'candidate_left'}))
                 if hasattr(self, '_candidate_notified'):
                     delattr(self, '_candidate_notified')
+
+    async def reset_candidate_notification(self, event):
+        """Reset the candidate notification flag for all recruiters."""
+        if getattr(self, 'user_role', 'candidate') in ('recruiter', 'admin'):
+            if hasattr(self, '_candidate_notified'):
+                delattr(self, '_candidate_notified')
+                logger.info(f'[WS] Reset candidate notification flag for recruiter in room {self.room_id}')
