@@ -1,15 +1,4 @@
-#!/bin/bash
-# InnovAIte Backend Startup Script
-# Automatically binds to the Railway assigned port
-
-# Set Django settings module
-export DJANGO_SETTINGS_MODULE=core.settings
-
-echo "Starting Backend with Port: $PORT"
-echo "Django Settings Module: $DJANGO_SETTINGS_MODULE"
-
-# Run migrations (optional, since using MongoDB)
-# python manage.py migrate --noinput
-
-# Start Daphne with PORT from environment
-exec daphne -b 0.0.0.0 -p ${PORT:-8000} core.asgi:application
+#!/bin/sh
+echo "Starting InnovAIte Backend on port: ${PORT:-8000}"
+echo "WebSocket support enabled via Daphne ASGI server"
+exec daphne -b 0.0.0.0 -p ${PORT:-8000} --proxy-headers core.asgi:application
