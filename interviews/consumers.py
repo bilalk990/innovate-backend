@@ -75,6 +75,8 @@ class SignalingConsumer(AsyncWebsocketConsumer):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'room_{self.room_id}'
 
+        logger.info(f'[WS] Connection attempt for room: {self.room_id}')
+
         # Validate interview exists
         interview = await get_interview_by_room(self.room_id)
         if not interview:
@@ -90,6 +92,8 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
         # Validate JWT and check user has permission
         user = self.scope.get('user')
+        logger.info(f'[WS] User from scope: {user}, is_authenticated: {getattr(user, "is_authenticated", False)}')
+        
         if not user or not getattr(user, 'is_authenticated', False):
             logger.warning(f'[WS] Unauthenticated connection attempt for room: {self.room_id}')
             await self.close(code=4001)
@@ -97,6 +101,8 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
         user_id = str(user.id)
         self.user_role = getattr(user, 'role', 'candidate')
+        logger.info(f'[WS] User {user_id} (role: {self.user_role}) attempting to join room {self.room_id}')
+        
         has_access = await validate_user_room_access(interview, user_id, self.user_role)
         if not has_access:
             logger.warning(f'[WS] Unauthorized room access: user={user_id} room={self.room_id}')
@@ -105,6 +111,7 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
+        logger.info(f'[WS] Connection accepted for user {user_id} in room {self.room_id}')
 
         # --- PERSISTENT CHAT: Fetch and send history on join ---
         history = await get_chat_history(self.room_id)
