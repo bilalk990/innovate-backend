@@ -1,0 +1,12 @@
+# Force LF line endings for shell scripts (prevent CRLF issues on Windows)
+*.sh text eol=lf
+
+# Standard text files
+*.py text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.env text eol=lf
+Dockerfile text eol=lf
+Procfile text eol=lf

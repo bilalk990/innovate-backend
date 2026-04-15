@@ -25,17 +25,14 @@ RUN pip install --upgrade pip && \
 # Copy project files
 COPY . .
 
-# Make startup script executable
-RUN chmod +x start.sh
-
 # Create media and static directories
 RUN mkdir -p media/resumes staticfiles
 
-# Collect static files (Ping skipped in settings.py during this command)
+# Collect static files (skips DB/secret checks via settings.py guard)
 RUN python manage.py collectstatic --noinput || true
 
 # Expose port
 EXPOSE 8000
 
-# Run startup script using shell to properly expand environment variables
-CMD ["/bin/bash", "./start.sh"]
+# Run daphne using shell form so $PORT expands from Railway env at runtime
+CMD ["/bin/sh", "-c", "exec daphne -b 0.0.0.0 -p ${PORT:-8000} core.asgi:application"]

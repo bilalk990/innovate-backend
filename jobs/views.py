@@ -118,14 +118,6 @@ class ApplicationView(APIView):
     def post(self, request):
         if request.user.role != 'candidate':
             return Response({'error': 'Only candidates can apply.'}, status=403)
-        
-        # CRITICAL FIX: Enforce resume requirement (#RESUME_REQUIRED)
-        resume = Resume.objects(candidate_id=str(request.user.id), is_active=True).first()
-        if not resume:
-            return Response({
-                'error': 'Please upload or generate your resume in the Resume Builder before applying to jobs.',
-                'code': 'RESUME_REQUIRED'
-            }, status=400)
 
         job_id = request.data.get('job_id')
 
