@@ -138,14 +138,8 @@ def validate_interview_time(scheduled_at: datetime, duration_minutes: int):
             'scheduled_at': scheduled_at
         }
     
-    # Check if scheduled too soon (minimum 1 hour notice for proper preparation)
-    min_notice = now + timedelta(hours=1)
-    if scheduled_at < min_notice:
-        return {
-            'valid': False,
-            'message': 'Interview must be scheduled at least 1 hour in advance to allow proper preparation time.',
-            'scheduled_at': scheduled_at
-        }
+    # No minimum advance notice - allow scheduling at any future time
+    # This provides maximum flexibility for urgent interviews
     
     # Check duration constraints
     if duration_minutes < 15:
