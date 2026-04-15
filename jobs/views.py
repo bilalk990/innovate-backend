@@ -119,6 +119,14 @@ class ApplicationView(APIView):
         if request.user.role != 'candidate':
             return Response({'error': 'Only candidates can apply.'}, status=403)
 
+        # Resume is required before applying
+        resume = Resume.objects(candidate_id=str(request.user.id), is_active=True).first()
+        if not resume:
+            return Response({
+                'error': 'Please upload or generate your resume in the Resume Builder before applying to jobs.',
+                'code': 'RESUME_REQUIRED'
+            }, status=400)
+
         job_id = request.data.get('job_id')
 
         if not job_id:
@@ -141,36 +149,41 @@ class ApplicationView(APIView):
         )
         app.save()
 
-        # --- Notify the recruiter about the new application ---
-        try:
-            recruiter = User.objects(id=job.posted_by).first()
-            if recruiter:
-                # 1. In-app notification
-                Notification(
-                    recipient_id=job.posted_by,
-                    sender_id=str(request.user.id),
-                    notification_type='new_application',
-                    title='New Application Received',
-                    message=f'{request.user.name} applied for your posting: "{job.title}".',
-                    link=f'/recruiter/jobs/{job_id}/applicants'
-                ).save()
+        # --- Notify recruiter in background thread so HTTP response is instant ---
+        import threading
+        from django.conf import settings as django_settings
 
-                # 2. Email alert
-                from django.conf import settings
-                frontend_url = getattr(settings, "FRONTEND_URL", "")
-                send_recruiter_notification_email(
-                    recruiter_email=recruiter.email,
-                    recruiter_name=recruiter.name,
-                    message=(
-                        f'<strong>{request.user.name}</strong> has applied for your job posting '
-                        f'<strong>"{job.title}"</strong>. Review their application and schedule an interview.'
-                    ),
-                    link=f'{frontend_url}/recruiter/jobs/{job_id}/applicants'
-                )
+        def _notify(job_id, job_title, recruiter_id, applicant_id, applicant_name):
+            try:
+                recruiter = User.objects(id=recruiter_id).first()
+                if recruiter:
+                    Notification(
+                        recipient_id=recruiter_id,
+                        sender_id=applicant_id,
+                        notification_type='new_application',
+                        title='New Application Received',
+                        message=f'{applicant_name} applied for your posting: "{job_title}".',
+                        link=f'/recruiter/jobs/{job_id}/applicants'
+                    ).save()
+                    frontend_url = getattr(django_settings, 'FRONTEND_URL', '')
+                    send_recruiter_notification_email(
+                        recruiter_email=recruiter.email,
+                        recruiter_name=recruiter.name,
+                        message=(
+                            f'<strong>{applicant_name}</strong> has applied for your job posting '
+                            f'<strong>"{job_title}"</strong>. Review their application.'
+                        ),
+                        link=f'{frontend_url}/recruiter/jobs/{job_id}/applicants'
+                    )
+            except Exception as e:
+                logger.warning(f'[Application] Recruiter notification failed: {e}')
 
-        except Exception as notify_err:
-            logger.warning(f'[Application] Recruiter notification failed: {notify_err}')
-        # -------------------------------------------------------
+        threading.Thread(
+            target=_notify,
+            args=(job_id, job.title, job.posted_by, str(request.user.id), request.user.name),
+            daemon=True
+        ).start()
+        # -------------------------------------------------------------------------
 
         return Response(app.to_dict(), status=201)
 
