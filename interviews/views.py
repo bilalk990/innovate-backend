@@ -204,35 +204,40 @@ class InterviewListCreateView(APIView):
                 except Exception as sync_err:
                     logger.warning(f'[Interview] Application status sync failed: {sync_err}')
 
-            # Send notifications
-            notification_sent = False
+            # Send notifications ASYNC so HTTP response is instant (email was causing 30s+ timeouts)
             if candidate_id:
-                try:
-                    candidate = User.objects.get(id=candidate_id)
-                    send_interview_scheduled_email(
-                        candidate_email=candidate.email,
-                        candidate_name=candidate.name,
-                        interview_data=interview.to_dict()
-                    )
-                    if candidate.phone:
-                        send_interview_scheduled_sms(
-                            candidate_phone=candidate.phone,
-                            interview_data=interview.to_dict()
+                def _notify_candidate(interview_dict, cand_id, recruiter_id):
+                    try:
+                        candidate = User.objects.get(id=cand_id)
+                        send_interview_scheduled_email(
+                            candidate_email=candidate.email,
+                            candidate_name=candidate.name,
+                            interview_data=interview_dict
                         )
-                    Notification(
-                        recipient_id=candidate_id,
-                        sender_id=str(request.user.id),
-                        notification_type='interview_scheduled',
-                        title='Interview Scheduled',
-                        message=f'You have been scheduled for an interview: {interview.title}',
-                        link=f'/interview/room/{interview.room_id}'
-                    ).save()
-                    notification_sent = True
-                except Exception as e:
-                    logger.warning(f'[Notification] Failed to notify candidate: {str(e)}')
+                        if candidate.phone:
+                            send_interview_scheduled_sms(
+                                candidate_phone=candidate.phone,
+                                interview_data=interview_dict
+                            )
+                        Notification(
+                            recipient_id=cand_id,
+                            sender_id=recruiter_id,
+                            notification_type='interview_scheduled',
+                            title='Interview Scheduled',
+                            message=f'You have been scheduled for an interview: {interview_dict.get("title")}',
+                            link=f'/interview/room/{interview_dict.get("room_id")}'
+                        ).save()
+                    except Exception as e:
+                        logger.warning(f'[Notification] Failed to notify candidate: {str(e)}')
+
+                threading.Thread(
+                    target=_notify_candidate,
+                    args=(interview.to_dict(), candidate_id, str(request.user.id)),
+                    daemon=True
+                ).start()
 
             result = interview.to_dict()
-            result['notification_sent'] = notification_sent
+            result['notification_sent'] = bool(candidate_id)
             return Response(result, status=201)
 
         except Exception as global_err:
