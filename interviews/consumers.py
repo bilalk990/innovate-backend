@@ -189,6 +189,18 @@ class SignalingConsumer(AsyncWebsocketConsumer):
                 }
             )
 
+        # ── Waiting Room: Recruiter joins and checks for waiting candidates ──
+        elif msg_type == 'recruiter_joined':
+            # When recruiter joins, trigger candidate to re-send request_admit
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'signaling_message',
+                    'message': {'type': 'recruiter_ready'},
+                    'sender': self.channel_name,
+                }
+            )
+
         # ── Waiting Room: Recruiter admits candidate ──
         elif msg_type == 'admit_candidate':
             # Reset notification flag so future candidates can knock again

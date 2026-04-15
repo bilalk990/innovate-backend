@@ -167,6 +167,7 @@ class GoogleLoginView(APIView):
             user = User.objects(email=email).first()
             if not user:
                 # Auto-register if not exists - only as candidate/recruiter
+                logger.info(f"[GoogleLogin] Creating new user: {email} with role: {role}")
                 user = User(
                     name=name,
                     email=email,
@@ -175,6 +176,8 @@ class GoogleLoginView(APIView):
                     password=bcrypt.hashpw(str(uuid.uuid4()).encode(), bcrypt.gensalt()).decode()
                 )
                 user.save()
+            else:
+                logger.info(f"[GoogleLogin] Existing user login: {email} with role: {user.role}")
             
             if not user.is_active:
                 return Response({'error': 'Account is disabled.'}, status=403)
@@ -183,7 +186,12 @@ class GoogleLoginView(APIView):
             log_audit(user, 'google_login', status='success', request=request)
 
             access_token = generate_token(user)
-            return Response({'token': access_token, 'user': user.to_dict()})
+            user_dict = user.to_dict()
+            
+            # CRITICAL: Ensure role is in response
+            logger.info(f"[GoogleLogin] Response for {email}: role={user_dict.get('role')}, token_length={len(access_token)}")
+            
+            return Response({'token': access_token, 'user': user_dict})
 
         except ValueError as e:
             error_msg = str(e).upper()
@@ -192,8 +200,10 @@ class GoogleLoginView(APIView):
                     'error': 'Clock synchronization issue detected. Please sync your system clock and try again.',
                     'details': str(e)
                 }, status=400)
+            logger.error(f"[GoogleLogin] Token verification failed: {str(e)}")
             return Response({'error': f'Invalid Google token: {str(e)}'}, status=400)
         except Exception as e:
+            logger.error(f"[GoogleLogin] Unexpected error: {str(e)}")
             return Response({'error': f'Google authentication error: {str(e)}'}, status=500)
 
 
