@@ -289,7 +289,7 @@ def _fallback_summary(overall):
 
 # ─── Main evaluation engine ───────────────────────────────────────────────────
 
-def run_xai_evaluation(interview, resume_parsed_data=None):
+def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
     """
     Run the XAI rule-based evaluation for a completed interview.
     Returns a dict with all criterion results, overall score, and recommendation.
@@ -338,7 +338,7 @@ def run_xai_evaluation(interview, resume_parsed_data=None):
                 s, exp, rules, ev = score_confidence_indicators(resp)
             elif criterion == 'semantic_accuracy':
                 if AI_AVAILABLE and getattr(question, 'ideal_answer', ''):
-                    ai_res = analyze_response_semantics(question.text, question.ideal_answer, resp)
+                    ai_res = analyze_response_semantics(question.text, question.ideal_answer, resp, user_id=user_id)
                     s, exp, rules, ev = ai_res['score'], ai_res['explanation'], ['RULE_AI_SEMANTIC_ANALYSIS'], ai_res.get('missing_points', [])
                 else:
                     s, exp, rules, ev = 5.0, 'AI Semantic Analysis unavailable.', ['RULE_AI_SKIPPED'], []
@@ -419,16 +419,16 @@ def run_xai_evaluation(interview, resume_parsed_data=None):
     if AI_AVAILABLE:
         transcript = " ".join(str(v) for v in responses.values())
 
-        # Run all AI calls in parallel using ThreadPoolExecutor
+        # Run all AI calls in parallel using ThreadPoolExecutor — pass user_id for rate limiting
         def _behavioral():
             try:
-                return analyze_behavioral_traits(transcript)
+                return analyze_behavioral_traits(transcript, user_id=user_id)
             except Exception:
                 return {"confidence_score": 50, "fluency_score": 50, "behavioral_summary": "N/A"}
 
         def _integrity():
             try:
-                return check_integrity_plagiarism(responses)
+                return check_integrity_plagiarism(responses, user_id=user_id)
             except Exception:
                 return {"integrity_score": 100, "notes": "No issues detected."}
 

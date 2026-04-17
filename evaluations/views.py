@@ -16,7 +16,7 @@ from interviews.models import Interview
 from resumes.models import Resume
 from notifications.models import Notification
 from accounts.models import User
-from core.openai_client import generate_offer_letter, rank_candidates_for_job, generate_interview_debrief, predict_hire_probability
+from core.openai_client import generate_offer_letter, rank_candidates_for_job, generate_interview_debrief, predict_hire_probability, generate_followup_email
 from core.email_service import send_evaluation_ready_email
 from core.audit_logger import log_evaluation_triggered
 from core.pdf_generator import generate_evaluation_pdf
@@ -52,14 +52,14 @@ class TriggerEvaluationView(APIView):
         ).order_by('-uploaded_at').first()
         resume_data = resume.parsed_data if resume else {}
 
-        # Check for existing evaluation
+        # Return existing evaluation if already computed
         existing = Evaluation.objects(interview_id=str(interview.id)).first()
         if existing:
-            return Response({'error': 'Evaluation already exists.', 'evaluation': existing.to_dict()}, status=400)
+            return Response(existing.to_dict(), status=200)
 
-        # Run XAI engine with error handling
+        # Run XAI engine with error handling — pass recruiter's user_id for rate limiting
         try:
-            result = run_xai_evaluation(interview, resume_data)
+            result = run_xai_evaluation(interview, resume_data, user_id=str(request.user.id))
         except Exception as e:
             import logging
             logging.getLogger('innovaite').error(f'Evaluation failed for interview {interview.id}: {e}')
@@ -505,7 +505,7 @@ class HireProbabilityView(APIView):
 
         try:
             interview = Interview.objects.get(id=evaluation.interview_id)
-            job_title = interview.title or 'Unknown Role'
+            job_title = getattr(interview, 'job_title', None) or getattr(interview, 'title', None) or 'Unknown Role'
         except Exception:
             job_title = 'Unknown Role'
 
@@ -525,3 +525,74 @@ class HireProbabilityView(APIView):
         except Exception as e:
             logger.error(f'[HireProbability] Failed: {e}')
             return Response({'error': 'Prediction service unavailable.'}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Feature 6 — Automated Follow-up Email Generation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class FollowUpEmailView(APIView):
+    """
+    POST /api/evaluations/<eval_id>/followup-email/
+    Generate personalized post-interview email for candidate (selection/rejection/hold/next_round).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, eval_id):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Only recruiters can generate follow-up emails.'}, status=403)
+
+        try:
+            evaluation = Evaluation.objects.get(id=eval_id)
+        except (mongoengine.DoesNotExist, mongoengine.ValidationError):
+            return Response({'error': 'Evaluation not found.'}, status=404)
+
+        if evaluation.recruiter_id != str(request.user.id) and request.user.role != 'admin':
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        decision = request.data.get('decision', 'hold')
+        if decision not in ('selected', 'rejected', 'hold', 'next_round'):
+            return Response({'error': "decision must be 'selected', 'rejected', 'hold', or 'next_round'."}, status=400)
+
+        company_name = request.data.get('company_name', 'InnovAIte')
+
+        # Resolve candidate name and job_title from interview
+        candidate_name = 'Candidate'
+        interview = None  # initialize before try so it's always bound
+        try:
+            interview = Interview.objects.get(id=evaluation.interview_id)
+            if interview.candidate_id:
+                candidate_user = User.objects(id=interview.candidate_id).first()
+                if candidate_user:
+                    candidate_name = candidate_user.name or candidate_user.email or 'Candidate'
+        except Exception:
+            pass
+
+        job_title = (
+            getattr(evaluation, 'job_title', None)
+            or (getattr(interview, 'job_title', None) if interview else None)
+            or 'the position'
+        )
+
+        # Build evaluation summary for AI
+        eval_data = {
+            'overall_score': evaluation.overall_score or 0,
+            'recommendation': evaluation.recommendation or 'maybe',
+            'strengths': list(evaluation.strengths or [])[:3],
+            'weaknesses': list(evaluation.weaknesses or [])[:3],
+            'summary': evaluation.summary or '',
+        }
+
+        try:
+            result = generate_followup_email(
+                candidate_name=candidate_name,
+                job_title=job_title,
+                decision=decision,
+                evaluation_data=eval_data,
+                company_name=company_name,
+                user_id=str(request.user.id),
+            )
+            return Response({'email': result, 'candidate_name': candidate_name})
+        except Exception as e:
+            logger.error(f'[FollowUpEmail] Generation failed: {e}')
+            return Response({'error': 'Email generation failed.'}, status=500)

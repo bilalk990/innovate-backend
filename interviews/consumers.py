@@ -146,12 +146,15 @@ class SignalingConsumer(AsyncWebsocketConsumer):
             self.room_group_name,
             {'type': 'peer_disconnected', 'channel': self.channel_name}
         )
-        # If candidate disconnects while waiting, stop showing the "at door" notification for recruiters
+        # If candidate disconnects while waiting, stop showing the "at door" notification
         if getattr(self, 'user_role', 'candidate') == 'candidate':
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {'type': 'candidate_left_door', 'channel': self.channel_name}
             )
+        # Mark interview as completed on abrupt disconnect (normal close = meeting already ended)
+        if close_code not in (1000, 1001):
+            await set_interview_status(self.room_id, 'completed')
         logger.info(f'[WS] Peer disconnected from room: {self.room_id} (code={close_code})')
 
     async def receive(self, text_data):
@@ -164,8 +167,8 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
         msg_type = data.get('type')
 
-        # ── Standard WebRTC signaling ──
-        if msg_type in ['offer', 'answer', 'ice-candidate', 'chat', 'ready', 'media-status-update']:
+        # ── Standard WebRTC signaling + real-time events ──
+        if msg_type in ['offer', 'answer', 'ice-candidate', 'chat', 'ready', 'media-status-update', 'violation_alert']:
             # Save chat messages to DB for persistence
             if msg_type == 'chat':
                 await save_chat_message(self.room_id, {

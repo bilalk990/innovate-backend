@@ -56,8 +56,21 @@ def _reset_if_new_day():
 
 
 def _increment_and_check_quota():
-    """Increment daily counter and return alert type if threshold crossed."""
+    """Increment daily counter, enforce soft limit, return alert type if threshold crossed."""
     _reset_if_new_day()
+
+    # Hard-block if daily soft limit already exceeded
+    if _daily_stats['total_calls'] >= _AI_DAILY_SOFT_LIMIT:
+        logger.error(f'[AI] Daily soft limit reached: {_daily_stats["total_calls"]}/{_AI_DAILY_SOFT_LIMIT}. Blocking call.')
+        if not _daily_stats['exhausted_notified']:
+            _daily_stats['exhausted_notified'] = True
+            try:
+                from core.ai_notifications import notify_admins_async
+                notify_admins_async('AI_QUOTA_EXHAUSTED')
+            except Exception:
+                pass
+        raise Exception('AI_QUOTA_EXHAUSTED')
+
     _daily_stats['total_calls'] += 1
     count = _daily_stats['total_calls']
 
@@ -298,7 +311,7 @@ Return ONLY the 3 bullet points.
         return "Focus on clarity and provide specific examples from your experience."
 
 
-def analyze_emotion_confidence(face_snapshots: list) -> dict:
+def analyze_emotion_confidence(face_snapshots: list, user_id: str = None) -> dict:
     """Analyze face metric snapshots for emotion and confidence scoring."""
     if not face_snapshots:
         return {
@@ -310,10 +323,21 @@ def analyze_emotion_confidence(face_snapshots: list) -> dict:
             'coaching_tip': 'No face data captured.',
         }
 
-    prompt = f"""
-Analyze {len(face_snapshots)} face metric snapshots from an interview.
+    # Cap to 15 snapshots max to prevent token abuse
+    safe_snapshots = face_snapshots[:15]
+    # Strip any unexpected large fields from each snapshot
+    sanitized = []
+    for snap in safe_snapshots:
+        if isinstance(snap, dict):
+            sanitized.append({k: v for k, v in snap.items() if k in (
+                'eye_contact', 'x', 'y', 'confidence', 'emotion',
+                'head_pose', 'blink_rate', 'timestamp', 'stability'
+            )})
 
-Data: {json.dumps(face_snapshots[:20], indent=2)}
+    prompt = f"""
+Analyze {len(sanitized)} face metric snapshots from an interview.
+
+Data: {json.dumps(sanitized, indent=2)}
 
 Return JSON:
 {{
@@ -327,7 +351,7 @@ Return JSON:
 }}
 """
     try:
-        return json.loads(_strip_json(_call(prompt)))
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
     except Exception as e:
         logger.warning(f'[GPT] Emotion analysis failed: {e}')
         return {
@@ -804,7 +828,10 @@ Return JSON:
 
 
 def generate_interview_debrief(evaluation, interview, candidate_name: str = '', user_id: str = None) -> dict:
-    """Generate structured interview debrief summary. Returns dict (not string)."""
+    """Generate structured interview debrief summary. Returns dict matching frontend schema."""
+    score = evaluation.get('overall_score', 50) if isinstance(evaluation, dict) else 50
+    rec = evaluation.get('recommendation', 'maybe') if isinstance(evaluation, dict) else 'maybe'
+
     prompt = f"""
 Generate a detailed, personalized interview debrief for {candidate_name or 'the candidate'}.
 
@@ -813,30 +840,75 @@ Interview Data: {json.dumps(interview)[:800]}
 
 Return JSON (not plain text):
 {{
-  "overall_impression": "2-3 sentence overall impression",
-  "performance_highlights": ["highlight1", "highlight2", "highlight3"],
-  "areas_for_improvement": ["area1", "area2"],
-  "communication_feedback": "1-2 sentences on communication style",
-  "technical_feedback": "1-2 sentences on technical responses",
-  "recommendation_summary": "1 sentence final recommendation",
-  "coaching_tips": ["tip1", "tip2", "tip3"]
+  "headline": "Short punchy headline summarizing performance (e.g. 'Strong Technical Communicator')",
+  "performance_tier": "One of: Exceptional, Strong, Developing, Needs Work",
+  "executive_summary": "3-4 sentence executive summary of overall interview performance",
+  "skill_scores": [
+    {{"skill": "Technical Knowledge", "score": 0-100, "feedback": "1 sentence"}},
+    {{"skill": "Communication", "score": 0-100, "feedback": "1 sentence"}},
+    {{"skill": "Problem Solving", "score": 0-100, "feedback": "1 sentence"}},
+    {{"skill": "Confidence", "score": 0-100, "feedback": "1 sentence"}}
+  ],
+  "top_strengths": [
+    {{"title": "Strength Title", "detail": "Brief explanation"}},
+    {{"title": "Strength Title", "detail": "Brief explanation"}},
+    {{"title": "Strength Title", "detail": "Brief explanation"}}
+  ],
+  "improvement_areas": [
+    {{"title": "Area Title", "action": "Actionable improvement step"}},
+    {{"title": "Area Title", "action": "Actionable improvement step"}},
+    {{"title": "Area Title", "action": "Actionable improvement step"}}
+  ],
+  "next_steps": ["Step 1 as a full sentence", "Step 2", "Step 3"],
+  "recommended_resources": ["Resource or course name 1", "Resource or course name 2", "Resource or course name 3"],
+  "motivational_note": "1-2 inspiring, personalized motivational sentences for the candidate"
 }}
 """
     try:
         result = json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        # Ensure candidate_name is available to view layer
+        result.setdefault('candidate_name', candidate_name)
         return result
     except Exception as e:
         logger.warning(f'[GPT] Debrief generation failed: {e}')
-        score = evaluation.get('overall_score', 50) if isinstance(evaluation, dict) else 50
-        rec = evaluation.get('recommendation', 'maybe') if isinstance(evaluation, dict) else 'maybe'
+        tier = 'Strong' if score >= 70 else 'Developing' if score >= 50 else 'Needs Work'
         return {
-            "overall_impression": f"{candidate_name or 'The candidate'} completed the interview with an overall score of {score}/100.",
-            "performance_highlights": evaluation.get('strengths', ['Completed all questions']) if isinstance(evaluation, dict) else ['Completed the interview'],
-            "areas_for_improvement": evaluation.get('weaknesses', ['Review feedback from recruiter']) if isinstance(evaluation, dict) else [],
-            "communication_feedback": "Review the interview feedback for details on communication style.",
-            "technical_feedback": "Technical performance has been evaluated. See detailed scores for breakdown.",
-            "recommendation_summary": f"Recruiter recommendation: {rec}.",
-            "coaching_tips": ["Practice STAR method for behavioral questions", "Prepare specific examples from your experience", "Review technical fundamentals for your role"]
+            "candidate_name": candidate_name,
+            "headline": f"Interview Complete — {score}/100 Overall Score",
+            "performance_tier": tier,
+            "executive_summary": (
+                f"{candidate_name or 'The candidate'} completed the interview with an overall score of {score}/100. "
+                f"The recruiter recommendation is: {rec}. "
+                "See the detailed breakdown below for specific feedback on each area."
+            ),
+            "skill_scores": [
+                {"skill": "Technical Knowledge", "score": score, "feedback": "See detailed evaluation for breakdown."},
+                {"skill": "Communication", "score": score, "feedback": "Evaluated based on interview responses."},
+                {"skill": "Problem Solving", "score": score, "feedback": "Based on question responses."},
+                {"skill": "Confidence", "score": score, "feedback": "Assessed during the live session."},
+            ],
+            "top_strengths": [
+                {"title": "Interview Completion", "detail": "Successfully completed all interview stages."},
+                {"title": "Preparation", "detail": "Demonstrated readiness for the role."},
+            ],
+            "improvement_areas": [
+                {"title": "Review Feedback", "action": "Carefully read the recruiter's comments for detailed improvement suggestions."},
+                {"title": "Practice STAR Method", "action": "Structure answers using Situation, Task, Action, Result framework."},
+            ],
+            "next_steps": [
+                "Review the full evaluation report shared by the recruiter.",
+                "Practice answering behavioral questions using the STAR method.",
+                "Strengthen technical fundamentals relevant to this role.",
+            ],
+            "recommended_resources": [
+                "STAR Method Interview Guide",
+                "LeetCode / HackerRank for technical practice",
+                "LinkedIn Learning courses for skill development",
+            ],
+            "motivational_note": (
+                f"Every interview is a step forward. Keep refining your skills and the right opportunity will come. "
+                f"You scored {score}/100 — use this feedback as fuel for your next attempt!"
+            ),
         }
 
 
@@ -899,6 +971,477 @@ Return JSON:
             "key_factors": ["Overall interview performance", "Confidence and communication"],
             "risk_factors": ["Limited data for full assessment"] if violations > 3 else [],
             "recommendation": "Strong hire" if prob >= 70 else "Consider for interview" if prob >= 45 else "Not recommended at this time"
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEW AI FEATURES — Features 1-8
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def analyze_voice_tone(audio_metrics: dict, user_id: str = None) -> dict:
+    """
+    Feature 1: Analyze audio metrics (pitch, energy, pace, pauses) for stress & confidence.
+    Frontend extracts metrics via Web Audio API and sends here.
+    """
+    if not audio_metrics:
+        return {
+            'tone_score': 50, 'stress_level': 'medium',
+            'confidence_from_voice': 50, 'pacing': 'normal',
+            'coaching_tip': 'No audio data captured.', 'voice_trend': 'stable'
+        }
+
+    prompt = f"""
+You are an expert voice & behavioral analyst. Analyze these audio metrics from a live interview.
+
+Audio Metrics:
+{json.dumps(audio_metrics, indent=2)}
+
+Return ONLY valid JSON:
+{{
+  "tone_score": 0-100,
+  "stress_level": "low" | "medium" | "high",
+  "confidence_from_voice": 0-100,
+  "pacing": "too_fast" | "normal" | "too_slow",
+  "volume_consistency": "steady" | "erratic",
+  "voice_trend": "improving" | "stable" | "deteriorating",
+  "filler_word_rate": "low" | "medium" | "high",
+  "coaching_tip": "One concrete tip to improve voice delivery",
+  "recruiter_insight": "One sentence insight for the recruiter about candidate's vocal confidence"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Voice tone analysis failed: {e}')
+        return {
+            'tone_score': 65, 'stress_level': 'medium',
+            'confidence_from_voice': 65, 'pacing': 'normal',
+            'volume_consistency': 'steady', 'voice_trend': 'stable',
+            'filler_word_rate': 'low',
+            'coaching_tip': 'Speak at a steady, clear pace and project confidence.',
+            'recruiter_insight': 'Candidate shows moderate vocal confidence.'
+        }
+
+
+def analyze_realtime_quality(
+    transcript_chunk: str,
+    question: str,
+    job_title: str = '',
+    elapsed_seconds: int = 0,
+    user_id: str = None
+) -> dict:
+    """
+    Feature 2: Real-time answer quality meter — called every 10s during interview.
+    Returns a 0-100 live quality score + color + coaching message for recruiter.
+    """
+    if not transcript_chunk or len(transcript_chunk.strip()) < 10:
+        return {
+            'quality_score': 0, 'completeness': 0, 'depth': 0,
+            'on_track': False, 'bar_color': 'gray',
+            'coach_message': 'Candidate has not spoken yet.',
+            'keyword_hits': [], 'estimated_completion': 'early'
+        }
+
+    prompt = f"""
+Analyze this LIVE interview transcript chunk in real-time.
+
+Job: {job_title}
+Question: "{question}"
+Answer so far ({elapsed_seconds}s elapsed): "{transcript_chunk}"
+
+Return ONLY valid JSON:
+{{
+  "quality_score": 0-100,
+  "completeness": 0-100,
+  "depth": 0-100,
+  "on_track": true | false,
+  "bar_color": "red" | "orange" | "yellow" | "green",
+  "keyword_hits": ["keyword found in answer"],
+  "missing_key_points": ["important point not yet mentioned"],
+  "coach_message": "Short message for recruiter (e.g. 'Strong start, push for examples')",
+  "estimated_completion": "early" | "mid" | "complete" | "over_explaining"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Live quality meter failed: {e}')
+        return {
+            'quality_score': 50, 'completeness': 40, 'depth': 50,
+            'on_track': True, 'bar_color': 'yellow',
+            'keyword_hits': [], 'missing_key_points': [],
+            'coach_message': 'Monitoring response quality.',
+            'estimated_completion': 'mid'
+        }
+
+
+def transcribe_audio_whisper(audio_bytes: bytes, filename: str = 'audio.webm', user_id: str = None) -> str:
+    """
+    Feature 3: Transcribe audio using OpenAI Whisper API (much more accurate than Web Speech).
+    Accepts raw audio bytes (webm/mp4/wav).
+    """
+    import io
+    if not audio_bytes or len(audio_bytes) < 100:
+        return ''
+
+    # Check per-user rate limit before consuming quota
+    if user_id:
+        allowed, remaining, reset_time = ai_rate_limiter.check_limit(user_id, limit=20, window_minutes=60)
+        if not allowed:
+            raise Exception(f'AI rate limit exceeded. Try again after {reset_time.strftime("%H:%M:%S")}')
+
+    # Increment quota INSIDE try so a quota-already-exceeded check fires first
+    _increment_and_check_quota()
+
+    try:
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = filename
+        transcript = client.audio.transcriptions.create(
+            model='whisper-1',
+            file=audio_file,
+            language='en'
+        )
+        logger.info(f'[Whisper] Transcribed {len(audio_bytes)} bytes successfully.')
+        return transcript.text.strip()
+    except Exception as e:
+        logger.error(f'[Whisper] Transcription failed: {e}')
+        return ''
+
+
+def summarize_question_response(question: str, transcript: str, job_title: str = '', user_id: str = None) -> dict:
+    """
+    Feature 3: Generate a structured per-question summary after each answer.
+    """
+    if not transcript or len(transcript.strip()) < 15:
+        return {'summary': '', 'key_points': [], 'score_estimate': 0, 'verdict': 'no_response'}
+
+    prompt = f"""
+Summarize this interview answer for the recruiter's notes.
+
+Job: {job_title}
+Question: "{question}"
+Candidate Answer: "{transcript[:3000]}"
+
+Return ONLY valid JSON:
+{{
+  "summary": "2-3 sentence summary of what candidate said",
+  "key_points": ["main point 1", "main point 2", "main point 3"],
+  "score_estimate": 0-10,
+  "verdict": "excellent" | "good" | "average" | "weak" | "no_response",
+  "missed_aspects": ["what candidate should have mentioned"],
+  "standout_moment": "Best thing candidate said, or empty string"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Response summary failed: {e}')
+        return {
+            'summary': transcript[:200],
+            'key_points': [], 'score_estimate': 5,
+            'verdict': 'average', 'missed_aspects': [], 'standout_moment': ''
+        }
+
+
+def detect_resume_inconsistencies(
+    resume_data: dict,
+    live_responses: list,
+    job_title: str = '',
+    user_id: str = None
+) -> dict:
+    """
+    Feature 4: Lie detection — compare resume claims vs what candidate said live.
+    live_responses: list of {'question': '...', 'response': '...'}
+    """
+    if not resume_data or not live_responses:
+        return {'inconsistencies': [], 'risk_level': 'low', 'flagged_claims': [], 'integrity_note': ''}
+
+    resume_summary = {
+        'skills': resume_data.get('skills', [])[:20],
+        'experience': [
+            {'title': e.get('title', ''), 'company': e.get('company', ''), 'duration': e.get('duration', '')}
+            for e in (resume_data.get('experience') or [])[:5]
+        ],
+        'total_years': resume_data.get('total_experience_years', 0),
+        'certifications': resume_data.get('certifications', [])[:5],
+    }
+
+    responses_text = '\n'.join([
+        f"Q: {r.get('question','')}\nA: {r.get('response','')[:500]}"
+        for r in live_responses[:5]
+    ])
+
+    prompt = f"""
+You are an expert HR analyst detecting inconsistencies between a candidate's resume and their live interview responses.
+
+Job Role: {job_title}
+
+RESUME CLAIMS:
+{json.dumps(resume_summary, indent=2)}
+
+LIVE INTERVIEW RESPONSES:
+{responses_text}
+
+Identify any contradictions, exaggerations, or red flags.
+
+Return ONLY valid JSON:
+{{
+  "inconsistencies": [
+    {{
+      "type": "skill_claim" | "experience_gap" | "timeline_mismatch" | "knowledge_gap" | "exaggeration",
+      "resume_claim": "What the resume says",
+      "interview_evidence": "What the candidate said that contradicts it",
+      "severity": "low" | "medium" | "high",
+      "flag": "Short flag label e.g. 'Python expertise mismatch'"
+    }}
+  ],
+  "risk_level": "low" | "medium" | "high",
+  "flagged_claims": ["claim1", "claim2"],
+  "integrity_note": "1-2 sentence overall integrity assessment",
+  "verification_questions": ["Follow-up question to verify claim"]
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Inconsistency detection failed: {e}')
+        return {
+            'inconsistencies': [], 'risk_level': 'low',
+            'flagged_claims': [], 'integrity_note': 'Analysis unavailable.',
+            'verification_questions': []
+        }
+
+
+def generate_recruiter_coaching(
+    transcript_chunk: str,
+    current_question: str,
+    candidate_performance: dict,
+    job_title: str = '',
+    user_id: str = None
+) -> dict:
+    """
+    Feature 5: Real-time AI coaching tips for the recruiter during the interview.
+    candidate_performance: {'quality_score': 0-100, 'depth': 0-100, 'on_track': bool}
+    """
+    if not transcript_chunk:
+        return {
+            'coaching_action': 'wait', 'urgency': 'low',
+            'suggestion': 'Continue with the current question.',
+            'followup_question': '', 'observation': ''
+        }
+
+    perf_summary = json.dumps(candidate_performance) if candidate_performance else '{}'
+
+    prompt = f"""
+You are an expert interview coach helping a recruiter in real-time.
+
+Job: {job_title}
+Current Question: "{current_question}"
+Candidate Performance So Far: {perf_summary}
+Latest Transcript: "{transcript_chunk[:1500]}"
+
+Analyze the situation and coach the recruiter on what to do next.
+
+Return ONLY valid JSON:
+{{
+  "coaching_action": "probe_deeper" | "move_on" | "challenge" | "clarify" | "encourage" | "redirect" | "wait",
+  "urgency": "low" | "medium" | "high",
+  "observation": "What you notice about the candidate's response (1 sentence)",
+  "suggestion": "Specific advice for the recruiter (1-2 sentences)",
+  "followup_question": "Exact follow-up question to ask (or empty string if not needed)",
+  "tone_advice": "How recruiter should adjust their tone/approach"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Recruiter coaching failed: {e}')
+        return {
+            'coaching_action': 'wait', 'urgency': 'low',
+            'observation': 'Candidate is responding.',
+            'suggestion': 'Listen carefully and note key points.',
+            'followup_question': '', 'tone_advice': 'Remain neutral and encouraging.'
+        }
+
+
+def generate_followup_email(
+    candidate_name: str,
+    job_title: str,
+    decision: str,
+    evaluation_data: dict,
+    company_name: str = 'InnovAIte',
+    user_id: str = None
+) -> dict:
+    """
+    Feature 6: Generate personalized post-interview follow-up email.
+    decision: 'selected' | 'rejected' | 'hold' | 'next_round'
+    """
+    score = evaluation_data.get('overall_score', 0)
+    strengths = evaluation_data.get('strengths', [])[:3]
+    summary = evaluation_data.get('summary', '')
+
+    decision_labels = {
+        'selected': 'OFFER EXTENDED',
+        'rejected': 'NOT MOVING FORWARD',
+        'hold': 'ON HOLD',
+        'next_round': 'ADVANCING TO NEXT ROUND'
+    }
+
+    prompt = f"""
+Generate a professional, warm, and personalized post-interview follow-up email.
+
+Candidate: {candidate_name}
+Role: {job_title}
+Company: {company_name}
+Decision: {decision_labels.get(decision, 'UNDER REVIEW')}
+Interview Score: {score}/100
+Key Strengths: {json.dumps(strengths)}
+Interview Summary: {summary[:500] if summary else 'Not provided'}
+
+Guidelines:
+- For 'selected': Enthusiastic, clear next steps, include [SALARY] and [START_DATE] placeholders
+- For 'rejected': Empathetic, constructive, keep door open for future
+- For 'hold': Transparent, positive framing, timeline for decision
+- For 'next_round': Clear, exciting, specify what next round involves
+
+Return ONLY valid JSON:
+{{
+  "subject": "Email subject line",
+  "greeting": "Dear {candidate_name},",
+  "body": "Full email body (3-5 paragraphs, professional yet warm)",
+  "closing": "Sincerely,\\n[Recruiter Name]\\n{company_name}",
+  "tone": "enthusiastic" | "empathetic" | "professional" | "encouraging",
+  "key_message": "1 sentence summary of the email's main message"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Follow-up email generation failed: {e}')
+        return {
+            'subject': f'Regarding Your Interview for {job_title}',
+            'greeting': f'Dear {candidate_name},',
+            'body': f'Thank you for interviewing for the {job_title} position. We will be in touch soon with our decision.',
+            'closing': f'Sincerely,\nThe {company_name} Team',
+            'tone': 'professional',
+            'key_message': 'Follow-up regarding interview outcome.'
+        }
+
+
+def analyze_job_description(
+    job_title: str,
+    job_description: str,
+    user_id: str = None
+) -> dict:
+    """
+    Feature 7: AI-powered JD analyzer — attractiveness, bias detection, clarity, improvements.
+    """
+    if not job_description or len(job_description.strip()) < 50:
+        return {
+            'attractiveness_score': 0, 'clarity_score': 0, 'bias_score': 100,
+            'bias_flags': [], 'improvements': [], 'readability': 'poor',
+            'summary': 'Job description too short to analyze.'
+        }
+
+    prompt = f"""
+You are an expert HR content analyst. Analyze this job description for quality, attractiveness, and bias.
+
+Job Title: {job_title}
+Job Description:
+{job_description[:3000]}
+
+Return ONLY valid JSON:
+{{
+  "attractiveness_score": 0-100,
+  "clarity_score": 0-100,
+  "bias_score": 0-100,
+  "readability": "excellent" | "good" | "average" | "poor",
+  "bias_flags": [
+    {{
+      "text": "exact phrase from JD",
+      "type": "gender_coded" | "age_bias" | "exclusionary" | "vague_requirement",
+      "suggestion": "Better alternative phrasing"
+    }}
+  ],
+  "missing_sections": ["e.g. salary range", "growth opportunities", "team culture"],
+  "improvements": ["Specific improvement 1", "Specific improvement 2"],
+  "strengths": ["What the JD does well"],
+  "candidate_appeal": "high" | "medium" | "low",
+  "estimated_applicant_quality": "senior" | "mid" | "junior" | "mixed",
+  "summary": "2-3 sentence overall assessment"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] JD analysis failed: {e}')
+        return {
+            'attractiveness_score': 60, 'clarity_score': 60, 'bias_score': 80,
+            'readability': 'average', 'bias_flags': [],
+            'missing_sections': [], 'improvements': [],
+            'strengths': [], 'candidate_appeal': 'medium',
+            'estimated_applicant_quality': 'mixed',
+            'summary': 'JD analysis unavailable. Please review manually.'
+        }
+
+
+def calibrate_interview_difficulty(
+    resume_data: dict,
+    job_title: str,
+    job_description: str = '',
+    user_id: str = None
+) -> dict:
+    """
+    Feature 8: Auto-calibrate interview difficulty based on candidate's resume level.
+    Returns recommended difficulty + question distribution.
+    """
+    resume_summary = {
+        'skills_count': len(resume_data.get('skills', [])),
+        'total_years': resume_data.get('total_experience_years', 0),
+        'experience_count': len(resume_data.get('experience') or []),
+        'skills_sample': (resume_data.get('skills') or [])[:10],
+        'certifications': (resume_data.get('certifications') or [])[:5],
+        'education': [
+            e.get('degree', '') for e in (resume_data.get('education') or [])[:2]
+        ]
+    }
+
+    prompt = f"""
+Calibrate the difficulty level for an interview based on the candidate's resume.
+
+Job: {job_title}
+Job Description: {job_description[:500] if job_description else 'Not provided'}
+Resume Summary: {json.dumps(resume_summary, indent=2)}
+
+Return ONLY valid JSON:
+{{
+  "experience_level": "entry" | "junior" | "mid" | "senior" | "lead",
+  "recommended_difficulty": "easy" | "medium" | "hard",
+  "rationale": "1-2 sentences explaining why this difficulty is appropriate",
+  "question_distribution": {{
+    "easy": 0-10,
+    "medium": 0-10,
+    "hard": 0-10
+  }},
+  "focus_areas": ["Area to probe", "Another area"],
+  "avoid_topics": ["Topics candidate clearly knows too well or not at all"],
+  "estimated_years_experience": 0,
+  "seniority_confidence": "high" | "medium" | "low"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Difficulty calibration failed: {e}')
+        return {
+            'experience_level': 'mid',
+            'recommended_difficulty': 'medium',
+            'rationale': 'Default medium difficulty applied.',
+            'question_distribution': {'easy': 3, 'medium': 4, 'hard': 3},
+            'focus_areas': ['Technical skills', 'Problem solving'],
+            'avoid_topics': [],
+            'estimated_years_experience': 0,
+            'seniority_confidence': 'low'
         }
 
 

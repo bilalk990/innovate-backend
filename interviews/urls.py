@@ -6,18 +6,20 @@ from interviews.views import (
 )
 from interviews.ai_views import (
     GenerateQuestionsView, CandidateHintsView,
-    # Feature 1 — Emotion Proctoring
     EmotionProctoringView,
-    # Feature 2 — Live Transcript Analysis
     LiveTranscriptAnalysisView,
-    # Feature 3 — Adaptive Questions
     AdaptiveQuestionView,
-    # Feature 5 — Slot Suggestions
     SuggestSlotsView,
-    # Feature 8 — Question Bank
     QuestionBankListCreateView, QuestionBankDetailView, QuestionBankAIGenerateView,
-    # Feature 9 — Live Question Suggester
     LiveQuestionSuggesterView,
+    # New Features
+    VoiceToneAnalysisView,
+    LiveQualityMeterView,
+    WhisperTranscribeView,
+    InconsistencyDetectionView,
+    RecruiterCoachView,
+    JDAnalyzerView,
+    DifficultyCalibrationView,
 )
 
 urlpatterns = [
@@ -26,7 +28,9 @@ urlpatterns = [
     # ── Static/prefixed routes MUST come before wildcard <str:interview_id> patterns ──
     path('generate-questions/', GenerateQuestionsView.as_view(), name='interview-generate-questions'),
     path('hints/', CandidateHintsView.as_view(), name='interview-candidate-hints'),
-    path('suggest-slots/', SuggestSlotsView.as_view(), name='interview-suggest-slots'),   # Feature 5
+    path('suggest-slots/', SuggestSlotsView.as_view(), name='interview-suggest-slots'),
+    path('analyze-jd/', JDAnalyzerView.as_view(), name='analyze-jd'),
+    path('calibrate-difficulty/', DifficultyCalibrationView.as_view(), name='calibrate-difficulty'),
     path('room/<str:room_id>/', JoinRoomView.as_view(), name='join-room'),
 
     # ── Question Bank routes (Feature 8) ──
@@ -40,8 +44,14 @@ urlpatterns = [
     path('<str:interview_id>/end/', EndInterviewView.as_view(), name='interview-end'),
     path('<str:interview_id>/reschedule/', RescheduleInterviewView.as_view(), name='interview-reschedule'),
     path('<str:interview_id>/violation/', RecordViolationView.as_view(), name='record-violation'),
-    path('<str:interview_id>/proctoring-emotion/', EmotionProctoringView.as_view(), name='emotion-proctoring'),    # Feature 1
-    path('<str:interview_id>/transcript-analysis/', LiveTranscriptAnalysisView.as_view(), name='live-transcript'),  # Feature 2
-    path('<str:interview_id>/adaptive-question/', AdaptiveQuestionView.as_view(), name='adaptive-question'),        # Feature 3
-    path('<str:interview_id>/suggest-questions/', LiveQuestionSuggesterView.as_view(), name='suggest-questions'),  # Feature 9
+    path('<str:interview_id>/proctoring-emotion/', EmotionProctoringView.as_view(), name='emotion-proctoring'),
+    path('<str:interview_id>/transcript-analysis/', LiveTranscriptAnalysisView.as_view(), name='live-transcript'),
+    path('<str:interview_id>/adaptive-question/', AdaptiveQuestionView.as_view(), name='adaptive-question'),
+    path('<str:interview_id>/suggest-questions/', LiveQuestionSuggesterView.as_view(), name='suggest-questions'),
+    # New Features
+    path('<str:interview_id>/voice-tone/', VoiceToneAnalysisView.as_view(), name='voice-tone'),
+    path('<str:interview_id>/live-quality/', LiveQualityMeterView.as_view(), name='live-quality'),
+    path('<str:interview_id>/transcribe/', WhisperTranscribeView.as_view(), name='whisper-transcribe'),
+    path('<str:interview_id>/inconsistency-check/', InconsistencyDetectionView.as_view(), name='inconsistency-check'),
+    path('<str:interview_id>/recruiter-coach/', RecruiterCoachView.as_view(), name='recruiter-coach'),
 ]

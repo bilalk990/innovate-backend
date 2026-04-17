@@ -382,15 +382,18 @@ class SubmitResponseView(APIView):
         except (mongoengine.DoesNotExist, mongoengine.ValidationError):
             return Response({'error': 'Interview not found.'}, status=404)
 
-        question_index = str(request.data.get('question_index', ''))
+        question_index = str(request.data.get('question_index', '0'))
         response_text = request.data.get('response', '').strip()
-        if not question_index or not response_text:
-            return Response({'error': 'question_index and response are required.'}, status=400)
+        if not response_text:
+            return Response({'error': 'response is required.'}, status=400)
 
-        # Validate question index is within bounds
+        # Validate question index — allow free-form index 0 when no questions defined
         try:
             q_idx = int(question_index)
-            if q_idx < 0 or q_idx >= len(interview.questions):
+            if q_idx < 0:
+                return Response({'error': 'question_index must be >= 0.'}, status=400)
+            # Only enforce upper bound if the interview has structured questions
+            if len(interview.questions) > 0 and q_idx >= len(interview.questions):
                 return Response({'error': 'Invalid question_index.'}, status=400)
         except (ValueError, TypeError):
             return Response({'error': 'question_index must be a number.'}, status=400)
@@ -565,17 +568,30 @@ class JoinRoomView(APIView):
         return Response(interview.to_dict())
 
 class RecordViolationView(APIView):
-    """Log a proctoring violation (e.g. tab switch) during interview"""
+    """Log a proctoring violation (e.g. tab switch) during interview.
+    Allowed callers: candidate (self), or the recruiter who owns the interview.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, interview_id):
         try:
-            interview = Interview.objects.get(id=interview_id, candidate_id=str(request.user.id))
-            interview.tab_switch_count += 1
-            interview.save()
-            return Response({'success': True, 'tab_switch_count': interview.tab_switch_count})
+            interview = Interview.objects.get(id=interview_id)
         except (mongoengine.DoesNotExist, mongoengine.ValidationError):
             return Response({'error': 'Interview not found'}, status=404)
+
+        uid = str(request.user.id)
+        role = request.user.role
+        # Candidate can record their own violations; recruiter can record for their interview
+        if role == 'candidate' and interview.candidate_id != uid:
+            return Response({'error': 'Forbidden.'}, status=403)
+        if role == 'recruiter' and interview.recruiter_id != uid:
+            return Response({'error': 'Forbidden.'}, status=403)
+        if role not in ('candidate', 'recruiter', 'admin'):
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        interview.tab_switch_count = (interview.tab_switch_count or 0) + 1
+        interview.save()
+        return Response({'success': True, 'tab_switch_count': interview.tab_switch_count})
 
 
 class RescheduleInterviewView(APIView):
