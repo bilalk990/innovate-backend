@@ -58,6 +58,15 @@ class QuestionBank(me.Document):
         }
 
 
+class Violation(me.EmbeddedDocument):
+    type = me.StringField(required=True)  # PHONE_DETECTED, MULTIPLE_PERSONS, etc.
+    description = me.StringField(required=True)
+    timestamp = me.DateTimeField(default=datetime.utcnow)
+    severity = me.StringField(choices=['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], default='MEDIUM')
+    confidence = me.IntField(default=0)  # Detection confidence percentage
+    details = me.DictField(default={})  # Additional metadata
+
+
 class Interview(me.Document):
     title = me.StringField(required=True)
     recruiter_id = me.StringField(required=True, index=True)  # User ObjectId
@@ -79,6 +88,13 @@ class Interview(me.Document):
     questions = me.ListField(me.EmbeddedDocumentField(Question))
     candidate_responses = me.DictField(default={})  # question_index -> response
     tab_switch_count = me.IntField(default=0) # Proctoring violations
+    
+    # Enhanced monitoring fields
+    violations = me.ListField(me.EmbeddedDocumentField(Violation), default=[])
+    monitoring_stats = me.DictField(default={})  # Real-time monitoring statistics
+    behavior_score = me.IntField(default=100)  # Overall behavior score (100 = perfect)
+    performance_metrics = me.DictField(default={})  # Answer quality, response time, etc.
+    
     chat_history = me.ListField(me.DictField(), default=[]) # Persistent conversation
     full_transcript = me.StringField(default="") # Entire session transcript for audit
     recording_url = me.StringField(default='')  # #56 — video recording URL
@@ -120,6 +136,20 @@ class Interview(me.Document):
             ],
             'candidate_responses': self.candidate_responses,
             'tab_switch_count': self.tab_switch_count,
+            'violations': [
+                {
+                    'type': v.type,
+                    'description': v.description,
+                    'timestamp': v.timestamp.isoformat(),
+                    'severity': v.severity,
+                    'confidence': v.confidence,
+                    'details': v.details,
+                }
+                for v in self.violations
+            ],
+            'monitoring_stats': self.monitoring_stats,
+            'behavior_score': self.behavior_score,
+            'performance_metrics': self.performance_metrics,
             'evaluation_id': self.evaluation_id or '',
             'recording_url': self.recording_url,
             'notes': self.notes,

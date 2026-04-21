@@ -21,6 +21,11 @@ from interviews.ai_views import (
     JDAnalyzerView,
     DifficultyCalibrationView,
 )
+from interviews.monitoring_views import (
+    ViolationTrackingView,
+    PerformanceAnalysisView,
+    ComprehensiveReportView
+)
 
 urlpatterns = [
     path('', InterviewListCreateView.as_view(), name='interview-list-create'),
@@ -54,4 +59,9 @@ urlpatterns = [
     path('<str:interview_id>/transcribe/', WhisperTranscribeView.as_view(), name='whisper-transcribe'),
     path('<str:interview_id>/inconsistency-check/', InconsistencyDetectionView.as_view(), name='inconsistency-check'),
     path('<str:interview_id>/recruiter-coach/', RecruiterCoachView.as_view(), name='recruiter-coach'),
+    
+    # Monitoring & Performance Analysis
+    path('<str:interview_id>/violations/', ViolationTrackingView.as_view(), name='violations'),
+    path('<str:interview_id>/analyze-performance/', PerformanceAnalysisView.as_view(), name='analyze-performance'),
+    path('<str:interview_id>/comprehensive-report/', ComprehensiveReportView.as_view(), name='comprehensive-report'),
 ]
