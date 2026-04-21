@@ -315,21 +315,33 @@ class ResumeUploadView(APIView):
             try:
                 from resumes.models import Resume as R
                 r = R.objects.get(id=resume_id)
+                r.parse_status = 'processing'  # Set to processing
+                r.save()
+                
+                logger.info(f'[Resume] Starting parse for {resume_id}')
                 parsed = parse_resume(fp, extension)
+                
+                # Log what was parsed
+                logger.info(f'[Resume] Parsed data: name={parsed.get("name")}, skills_count={len(parsed.get("skills", []))}, parsed_by={parsed.get("parsed_by")}')
+                
                 r.parsed_data = parsed
-                r.parse_status = 'parsed' if parsed.get('skills') or parsed.get('name') else 'failed'
+                # CRITICAL FIX: Set to 'parsed' even if minimal data, as long as we have SOMETHING
+                has_data = (parsed.get('skills') or parsed.get('name') or parsed.get('email') or 
+                           parsed.get('experience') or parsed.get('education'))
+                r.parse_status = 'parsed' if has_data else 'failed'
                 r.parsed_by_ai = parsed.get('parsed_by') == 'openai-gpt'
                 r.save()
-                logger.info(f'[Resume] Successfully parsed resume {resume_id}')
+                logger.info(f'[Resume] Successfully parsed resume {resume_id}, status={r.parse_status}')
             except Exception as e:
-                logger.error(f'[Resume] Background parse failed for {resume_id}: {e}')
+                logger.error(f'[Resume] Background parse failed for {resume_id}: {e}', exc_info=True)
                 try:
                     from resumes.models import Resume as R
                     r = R.objects.get(id=resume_id)
                     r.parse_status = 'failed'
+                    r.parsed_data = {'error': str(e)}
                     r.save()
-                except Exception:
-                    pass
+                except Exception as save_err:
+                    logger.error(f'[Resume] Failed to save error status: {save_err}')
 
         t = threading.Thread(
             target=_parse_in_background,
