@@ -108,6 +108,8 @@ def parse_resume(file_path: str, ext: str) -> dict:
             ai_result = parse_resume_with_ai(raw_text, user_id='system')
             if ai_result and (ai_result.get('skills') or ai_result.get('name')):
                 ai_result['parsed_by'] = 'openai-gpt'
+                # Calculate quality score for AI-parsed resumes
+                ai_result['quality_score'] = calculate_quality_score(ai_result)
                 return ai_result
         except Exception as e:
             logger.warning(f'[Resume] AI parsing failed: {str(e)} — using rule-based fallback')
