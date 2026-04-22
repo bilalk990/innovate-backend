@@ -377,3 +377,77 @@ class JobApplicantsView(APIView):
             return Response({'error': 'Job not found or error fetching applicants.'}, status=404)
 
 
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# NEW AI FEATURES - JOB FITMENT & ADVANCED GAP ANALYSIS
+# ═════════════════════════════════════════════════════════════════════════════
+
+class JobFitmentAnalysisView(APIView):
+    """
+    POST /api/jobs/fitment-analysis/
+    Deep semantic job fitment analysis using AI.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        resume_data = request.data.get('resume_data', {})
+        job_description = request.data.get('job_description', '').strip()
+        
+        if not resume_data or not job_description:
+            return Response({'error': 'Both resume_data and job_description are required.'}, status=400)
+
+        try:
+            from core.gemini import analyze_job_fitment
+            result = analyze_job_fitment(resume_data, job_description)
+            
+            # Normalize response format
+            if isinstance(result, dict):
+                # Ensure required fields exist
+                if 'fitment_score' not in result:
+                    result['fitment_score'] = result.get('match_percentage', 60)
+                if 'matched_skills' not in result:
+                    result['matched_skills'] = result.get('matched_dimensions', [])
+                if 'missing_skills' not in result:
+                    result['missing_skills'] = result.get('missing_relevance', [])
+                return Response(result)
+            else:
+                return Response({'error': 'Invalid AI response format.'}, status=500)
+        except Exception as e:
+            logger.error(f'[JobFitment] Failed: {e}')
+            return Response({'error': f'Fitment analysis failed: {str(e)}'}, status=500)
+
+
+class AdvancedGapAnalysisView(APIView):
+    """
+    POST /api/jobs/advanced-gap-analysis/
+    Advanced gap analysis with detailed recommendations.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        resume_data = request.data.get('resume_data', {})
+        job_id = request.data.get('job_id', '').strip()
+        
+        if not resume_data or not job_id:
+            return Response({'error': 'Both resume_data and job_id are required.'}, status=400)
+
+        try:
+            job = Job.objects.get(id=job_id)
+        except (mongoengine.DoesNotExist, mongoengine.ValidationError):
+            return Response({'error': 'Job not found.'}, status=404)
+
+        try:
+            from core.openai_client import analyze_resume_jd_gap
+            result = analyze_resume_jd_gap(
+                resume_data=resume_data,
+                job_description=job.description,
+                job_title=job.title,
+                requirements=job.requirements,
+            )
+            result['job_title'] = job.title
+            result['job_id'] = str(job.id)
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[AdvancedGapAnalysis] Failed: {e}')
+            return Response({'error': f'Gap analysis failed: {str(e)}'}, status=500)

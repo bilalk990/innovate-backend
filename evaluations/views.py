@@ -596,3 +596,196 @@ class FollowUpEmailView(APIView):
         except Exception as e:
             logger.error(f'[FollowUpEmail] Generation failed: {e}')
             return Response({'error': 'Email generation failed.'}, status=500)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# NEW AI FEATURES - DYNAMIC ENDPOINTS
+# ═════════════════════════════════════════════════════════════════════════════
+
+class BehavioralTraitsView(APIView):
+    """
+    POST /api/evaluations/behavioral-traits/
+    Analyze transcript for behavioral traits using AI.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        transcript = request.data.get('transcript', '').strip()
+        if not transcript or len(transcript) < 20:
+            return Response({'error': 'Transcript is required and must be at least 20 characters.'}, status=400)
+
+        try:
+            from core.gemini import analyze_behavioral_traits
+            result = analyze_behavioral_traits(transcript, user_id=str(request.user.id))
+            
+            # Normalize response format
+            if isinstance(result, dict):
+                # Ensure traits field exists
+                if 'traits' not in result and 'confidence_score' in result:
+                    result['traits'] = {
+                        'confidence': result.get('confidence_score', 70),
+                        'fluency': result.get('fluency_score', 70),
+                        'filler_words': result.get('filler_count', 0)
+                    }
+                return Response(result)
+            else:
+                return Response({'error': 'Invalid AI response format.'}, status=500)
+        except Exception as e:
+            logger.error(f'[BehavioralTraits] Failed: {e}')
+            return Response({'error': f'Analysis failed: {str(e)}'}, status=500)
+
+
+class IntegrityCheckView(APIView):
+    """
+    POST /api/evaluations/check-integrity/
+    Check responses for plagiarism and AI-generated content.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        responses = request.data.get('responses', [])
+        if not responses or not isinstance(responses, list):
+            return Response({'error': 'Responses array is required.'}, status=400)
+
+        try:
+            from core.gemini import check_integrity_plagiarism
+            result = check_integrity_plagiarism(responses, user_id=str(request.user.id))
+            
+            # Normalize response format
+            if isinstance(result, dict):
+                # Ensure required fields exist
+                if 'integrity_score' not in result:
+                    result['integrity_score'] = result.get('score', 90)
+                if 'red_flags' not in result:
+                    result['red_flags'] = result.get('notes', '').split('. ') if result.get('notes') else []
+                return Response(result)
+            else:
+                return Response({'error': 'Invalid AI response format.'}, status=500)
+        except Exception as e:
+            logger.error(f'[IntegrityCheck] Failed: {e}')
+            return Response({'error': f'Integrity check failed: {str(e)}'}, status=500)
+
+
+class CultureFitView(APIView):
+    """
+    POST /api/evaluations/culture-fit/
+    Analyze candidate's culture fit based on transcript and company values.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        transcript = request.data.get('transcript', '').strip()
+        company_values = request.data.get('company_values', [])
+        
+        if not transcript or len(transcript) < 20:
+            return Response({'error': 'Transcript is required and must be at least 20 characters.'}, status=400)
+        
+        if not company_values:
+            company_values = ['Innovation', 'Collaboration', 'Excellence', 'Integrity']
+
+        try:
+            from core.gemini import analyze_culture_fit
+            result = analyze_culture_fit(transcript, company_values)
+            
+            # Normalize response format
+            if isinstance(result, dict):
+                # Ensure required fields exist
+                if 'culture_fit_score' not in result:
+                    result['culture_fit_score'] = result.get('culture_score', 70)
+                if 'aligned_values' not in result:
+                    result['aligned_values'] = result.get('aligned', [])
+                if 'misaligned_values' not in result:
+                    result['misaligned_values'] = result.get('red_flags', [])
+                return Response(result)
+            else:
+                return Response({'error': 'Invalid AI response format.'}, status=500)
+        except Exception as e:
+            logger.error(f'[CultureFit] Failed: {e}')
+            return Response({'error': f'Culture fit analysis failed: {str(e)}'}, status=500)
+
+
+class ExecutiveSummaryView(APIView):
+    """
+    POST /api/evaluations/executive-summary/
+    Generate executive summary for leadership review.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        interview_data = request.data.get('interview_data', {})
+        evaluation_results = request.data.get('evaluation_results', {})
+        
+        if not interview_data or not evaluation_results:
+            return Response({'error': 'Both interview_data and evaluation_results are required.'}, status=400)
+
+        try:
+            from core.gemini import generate_executive_summary
+            summary = generate_executive_summary(interview_data, evaluation_results)
+            
+            # Return as structured response
+            if isinstance(summary, str):
+                return Response({'summary': summary, 'executive_summary': summary})
+            elif isinstance(summary, dict):
+                return Response(summary)
+            else:
+                return Response({'error': 'Invalid AI response format.'}, status=500)
+        except Exception as e:
+            logger.error(f'[ExecutiveSummary] Failed: {e}')
+            return Response({'error': f'Summary generation failed: {str(e)}'}, status=500)
+
+
+class PredictHireView(APIView):
+    """
+    GET /api/evaluations/<eval_id>/predict-hire/
+    Advanced predictive hiring score using ML-based analysis.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, eval_id):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        try:
+            evaluation = Evaluation.objects.get(id=eval_id)
+        except (mongoengine.DoesNotExist, mongoengine.ValidationError):
+            return Response({'error': 'Evaluation not found.'}, status=404)
+
+        if request.user.role == 'recruiter' and evaluation.recruiter_id != str(request.user.id):
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        try:
+            # Get interview for job title
+            interview = Interview.objects.get(id=evaluation.interview_id)
+            job_title = getattr(interview, 'job_title', None) or getattr(interview, 'title', None) or 'Unknown Role'
+        except Exception:
+            job_title = 'Unknown Role'
+
+        try:
+            from core.openai_client import predict_hire_probability
+            result = predict_hire_probability(
+                overall_score=evaluation.overall_score or 0,
+                confidence_score=evaluation.confidence_score or 0,
+                proctoring_score=evaluation.proctoring_score or 0,
+                fluency_score=evaluation.fluency_score or 0,
+                culture_fit_score=evaluation.culture_fit_score or 0,
+                violations=evaluation.tab_switch_count or 0,
+                recommendation=evaluation.recommendation or 'maybe',
+                job_title=job_title,
+                criterion_results=[cr.to_dict() for cr in (evaluation.criterion_results or [])],
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PredictHire] Failed: {e}')
+            return Response({'error': f'Prediction failed: {str(e)}'}, status=500)

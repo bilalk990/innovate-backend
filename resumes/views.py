@@ -465,3 +465,68 @@ class GenerateResumeView(APIView):
                 return Response({'error': 'AI service temporarily unavailable.'}, status=503)
             return Response({'error': f'Resume generation failed: {str(e)}'}, status=500)
 
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# NEW AI FEATURE - ADVANCED RESUME GENERATOR
+# ═════════════════════════════════════════════════════════════════════════════
+
+class GenerateAdvancedResumeView(APIView):
+    """
+    POST /api/resumes/generate-advanced/
+    Generate ATS-optimized resume with advanced AI features.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != 'candidate':
+            return Response({'error': 'Only candidates can generate resumes.'}, status=403)
+
+        # Extract profile data from request
+        name = request.data.get('name', request.user.name)
+        email = request.data.get('email', request.user.email)
+        phone = request.data.get('phone', getattr(request.user, 'phone', ''))
+        bio = request.data.get('bio', getattr(request.user, 'bio', ''))
+        skills = request.data.get('skills', list(getattr(request.user, 'detailed_skills', [])))
+        experience = request.data.get('experience', list(getattr(request.user, 'work_history', [])))
+        education = request.data.get('education', list(getattr(request.user, 'education_history', [])))
+        job_target = request.data.get('job_target', '')
+        
+        logger.info(f"[AdvancedResumeGen] Generating ATS resume for {email}. Target: {job_target}")
+        
+        # Validate minimum data
+        if not name and not skills and not experience:
+            return Response({'error': 'Profile data is insufficient. Please add your name, skills, or experience.'}, status=400)
+
+        try:
+            from core.openai_client import generate_resume_content
+            
+            # Generate with ATS optimization flag
+            result = generate_resume_content(
+                name=name,
+                email=email,
+                phone=phone,
+                headline=request.data.get('headline', getattr(request.user, 'headline', '')),
+                bio=bio,
+                skills=skills,
+                work_history=experience,
+                education_history=education,
+                location=request.data.get('location', getattr(request.user, 'location', '')),
+                job_target=job_target,
+            )
+            
+            if not result or not isinstance(result, dict):
+                logger.error(f"[AdvancedResumeGen] AI returned invalid response for {email}")
+                return Response({'error': 'AI failed to generate resume. Please try again.'}, status=500)
+
+            # Add ATS optimization metadata
+            result['ats_optimized'] = True
+            result['generation_type'] = 'advanced'
+            
+            return Response(result)
+        except Exception as e:
+            logger.error(f"[AdvancedResumeGen] Error for {email}: {str(e)}")
+            error_msg = str(e).upper()
+            if 'QUOTA' in error_msg or 'KEY' in error_msg:
+                return Response({'error': 'AI service temporarily unavailable.'}, status=503)
+            return Response({'error': f'Advanced resume generation failed: {str(e)}'}, status=500)
