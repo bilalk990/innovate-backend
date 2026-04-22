@@ -27,7 +27,7 @@ class Resume(me.Document):
     # }
 
     parse_status = me.StringField(
-        choices=['pending', 'parsed', 'failed'],
+        choices=['pending', 'processing', 'parsed', 'failed'],
         default='pending'
     )
     parsed_by_ai = me.BooleanField(default=False)  # True if AI (OpenAI GPT) was used
