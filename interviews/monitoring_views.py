@@ -7,7 +7,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from interviews.models import Interview, Violation
-from core.openai_client import get_openai_client
+from core.openai_client import _call, _strip_json
+import json
 
 logger = logging.getLogger('innovaite')
 
@@ -146,8 +147,6 @@ class PerformanceAnalysisView(APIView):
             return Response({'error': 'No transcript or questions available'}, status=400)
 
         try:
-            client = get_openai_client()
-            
             # Prepare analysis prompt
             questions_text = "\n".join([
                 f"{i+1}. {q.text} (Expected: {', '.join(q.expected_keywords) if q.expected_keywords else 'N/A'})"
@@ -172,17 +171,8 @@ Provide analysis in the following format:
 
 Be specific and reference actual responses from the transcript."""
 
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are an expert interview evaluator analyzing candidate performance."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=1500
-            )
-
-            analysis = response.choices[0].message.content
+            # Use _call function from openai_client
+            analysis = _call(prompt, user_id=str(user.id))
 
             # Parse and structure the analysis
             performance_metrics = {
