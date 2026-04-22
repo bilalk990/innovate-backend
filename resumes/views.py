@@ -323,23 +323,44 @@ class ResumeUploadView(APIView):
                 
                 # Log what was parsed
                 logger.info(f'[Resume] Parsed data: name={parsed.get("name")}, skills_count={len(parsed.get("skills", []))}, parsed_by={parsed.get("parsed_by")}')
+                logger.info(f'[Resume] Full parsed data: {parsed}')
                 
                 r.parsed_data = parsed
-                # CRITICAL FIX: Set to 'parsed' even if minimal data, as long as we have SOMETHING
-                has_data = (parsed.get('skills') or parsed.get('name') or parsed.get('email') or 
-                           parsed.get('experience') or parsed.get('education'))
-                r.parse_status = 'parsed' if has_data else 'failed'
+                # CRITICAL FIX: More lenient success criteria - accept if we have ANY useful data
+                has_name = bool(parsed.get('name') and len(str(parsed.get('name')).strip()) > 2)
+                has_skills = bool(parsed.get('skills') and len(parsed.get('skills', [])) > 0)
+                has_email = bool(parsed.get('email'))
+                has_experience = bool(parsed.get('experience') and len(parsed.get('experience', [])) > 0)
+                has_education = bool(parsed.get('education') and len(parsed.get('education', [])) > 0)
+                has_summary = bool(parsed.get('summary') and len(str(parsed.get('summary')).strip()) > 10)
+                
+                # Success if we have at least 2 of these fields
+                success_count = sum([has_name, has_skills, has_email, has_experience, has_education, has_summary])
+                
+                if success_count >= 2:
+                    r.parse_status = 'parsed'
+                    logger.info(f'[Resume] Parse SUCCESS - {success_count}/6 fields found')
+                else:
+                    r.parse_status = 'failed'
+                    logger.warning(f'[Resume] Parse FAILED - only {success_count}/6 fields found. Data: {parsed}')
+                
                 r.parsed_by_ai = parsed.get('parsed_by') == 'openai-gpt'
                 r.save()
-                logger.info(f'[Resume] Successfully parsed resume {resume_id}, status={r.parse_status}')
+                logger.info(f'[Resume] Successfully processed resume {resume_id}, status={r.parse_status}')
             except Exception as e:
                 logger.error(f'[Resume] Background parse failed for {resume_id}: {e}', exc_info=True)
+                logger.error(f'[Resume] Full error details: {type(e).__name__}: {str(e)}')
                 try:
                     from resumes.models import Resume as R
                     r = R.objects.get(id=resume_id)
                     r.parse_status = 'failed'
-                    r.parsed_data = {'error': str(e)}
+                    r.parsed_data = {
+                        'error': str(e),
+                        'error_type': type(e).__name__,
+                        'message': 'Resume parsing failed. Please try uploading again or use a different format.'
+                    }
                     r.save()
+                    logger.info(f'[Resume] Saved failed status for {resume_id}')
                 except Exception as save_err:
                     logger.error(f'[Resume] Failed to save error status: {save_err}')
 
