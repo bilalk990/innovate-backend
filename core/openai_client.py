@@ -2217,3 +2217,182 @@ def recommend_career_paths(profile_data: dict, evaluation_history: list = None, 
             'overall_assessment': 'You have a solid foundation to build from. Focus on deepening your core skills and building a visible portfolio.',
             'top_strength': 'Eagerness to learn and technical aptitude'
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTERVIEW PREP LAB — 3 AI functions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def generate_interview_prep_plan(role: str, stacks: list, level: str, user_id: str = None) -> dict:
+    """Generate a complete interview preparation roadmap for a given role and tech stack."""
+    stacks_text = ', '.join(stacks) if stacks else role
+
+    prompt = (
+        'You are a senior tech interview coach. Generate a complete interview preparation plan.\n\n'
+        'Role: ' + role + '\n'
+        'Tech Stack: ' + stacks_text + '\n'
+        'Level: ' + level + '\n\n'
+        'Make it specific, actionable, and intelligent. No generic filler.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "prep_overview": "2-3 sentence smart summary of what this interview will test",\n'
+        '  "estimated_prep_days": 7,\n'
+        '  "difficulty": "Easy|Medium|Hard|Very Hard",\n'
+        '  "topics": [\n'
+        '    {\n'
+        '      "category": "category name (e.g. Core JavaScript, System Design, DSA)",\n'
+        '      "priority": "Must Know|Good to Know|Bonus",\n'
+        '      "concepts": ["concept1", "concept2", "concept3", "concept4"],\n'
+        '      "interview_weight": "High|Medium|Low"\n'
+        '    }\n'
+        '  ],\n'
+        '  "common_question_patterns": [\n'
+        '    {"pattern": "Pattern name", "example": "Example question", "how_to_answer": "Brief strategy"}\n'
+        '  ],\n'
+        '  "must_know_concepts": ["concept1", "concept2", "concept3", "concept4", "concept5"],\n'
+        '  "red_flag_topics": ["topic often failed by candidates1", "topic2"],\n'
+        '  "pro_tips": ["tip1", "tip2", "tip3"],\n'
+        '  "daily_schedule": [\n'
+        '    {"day": "Day 1-2", "focus": "what to study", "goal": "specific milestone"}\n'
+        '  ]\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Prep plan generation failed: {e}')
+        return {
+            'prep_overview': f'This {level} {role} interview will test your knowledge of {stacks_text}. Focus on fundamentals and practical application.',
+            'estimated_prep_days': 7,
+            'difficulty': 'Medium',
+            'topics': [
+                {'category': stacks[0] if stacks else role, 'priority': 'Must Know', 'concepts': ['Core fundamentals', 'Common patterns', 'Best practices', 'Error handling'], 'interview_weight': 'High'},
+                {'category': 'System Design', 'priority': 'Must Know', 'concepts': ['Scalability', 'APIs', 'Databases', 'Caching'], 'interview_weight': 'High'},
+                {'category': 'Data Structures & Algorithms', 'priority': 'Good to Know', 'concepts': ['Arrays', 'Hashmaps', 'Trees', 'Big O notation'], 'interview_weight': 'Medium'},
+            ],
+            'common_question_patterns': [
+                {'pattern': 'Explain a concept', 'example': f'How does {stacks[0] if stacks else role} work?', 'how_to_answer': 'Start with definition, then explain with an example, then mention use cases.'},
+                {'pattern': 'Problem solving', 'example': 'Optimize this code snippet', 'how_to_answer': 'Think aloud, mention time/space complexity, test edge cases.'},
+            ],
+            'must_know_concepts': ['Core syntax', 'Common design patterns', 'Error handling', 'Performance optimization', 'Testing basics'],
+            'red_flag_topics': ['Memory leaks', 'Async handling', 'Security basics'],
+            'pro_tips': ['Study the official docs', 'Build a small project using the stack', 'Practice coding without IDE'],
+            'daily_schedule': [
+                {'day': 'Day 1-2', 'focus': 'Core fundamentals', 'goal': 'Understand all basic concepts'},
+                {'day': 'Day 3-4', 'focus': 'Practical coding', 'goal': 'Solve 5 practice problems'},
+                {'day': 'Day 5-7', 'focus': 'Mock interviews + review', 'goal': 'Score 80%+ on practice quiz'},
+            ]
+        }
+
+
+def generate_interview_mcq_quiz(role: str, stacks: list, level: str, count: int = 10, user_id: str = None) -> dict:
+    """Generate stack-specific MCQ quiz questions for interview prep."""
+    stacks_text = ', '.join(stacks) if stacks else role
+
+    prompt = (
+        'You are a technical interview question writer. Generate exactly ' + str(count) + ' MCQ questions.\n\n'
+        'Role: ' + role + '\n'
+        'Tech Stack: ' + stacks_text + '\n'
+        'Level: ' + level + '\n\n'
+        'Rules:\n'
+        '- Questions must be genuinely technical, not trivial\n'
+        '- Mix difficulties: 30% easy, 50% medium, 20% hard\n'
+        '- Cover different aspects of the tech stack\n'
+        '- Explanations should teach, not just state the answer\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "quiz_title": "Title for this quiz",\n'
+        '  "total_questions": ' + str(count) + ',\n'
+        '  "questions": [\n'
+        '    {\n'
+        '      "id": 1,\n'
+        '      "question": "The question text",\n'
+        '      "options": ["Option A", "Option B", "Option C", "Option D"],\n'
+        '      "correct_index": 0,\n'
+        '      "explanation": "Why this is correct + why others are wrong (2-3 sentences)",\n'
+        '      "topic": "which topic this covers",\n'
+        '      "difficulty": "Easy|Medium|Hard"\n'
+        '    }\n'
+        '  ]\n'
+        '}'
+    )
+    try:
+        result = json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        # Validate structure
+        if 'questions' not in result or not result['questions']:
+            raise ValueError('No questions generated')
+        # Ensure correct_index is int and in range
+        for q in result['questions']:
+            q['correct_index'] = int(q.get('correct_index', 0))
+            if not isinstance(q.get('options'), list) or len(q['options']) < 4:
+                q['options'] = ['Option A', 'Option B', 'Option C', 'Option D']
+        return result
+    except Exception as e:
+        logger.warning(f'[GPT] MCQ quiz generation failed: {e}')
+        return {
+            'quiz_title': f'{role} Knowledge Check',
+            'total_questions': 5,
+            'questions': [
+                {'id': 1, 'question': f'What is the primary purpose of {stacks[0] if stacks else role}?', 'options': ['Building user interfaces', 'Managing databases', 'Server-side scripting', 'Network configuration'], 'correct_index': 0, 'explanation': f'{stacks[0] if stacks else role} is primarily used for building user interfaces. It provides a component-based architecture for creating dynamic web applications.', 'topic': 'Fundamentals', 'difficulty': 'Easy'},
+                {'id': 2, 'question': 'What does "DRY" principle stand for in software development?', 'options': ['Do Repeat Yourself', "Don't Repeat Yourself", 'Dynamic Runtime Yielding', 'Direct Resource Yielding'], 'correct_index': 1, 'explanation': "DRY stands for Don't Repeat Yourself. It means every piece of knowledge should have a single, unambiguous representation in a system.", 'topic': 'Best Practices', 'difficulty': 'Easy'},
+                {'id': 3, 'question': 'Which of the following best describes O(n log n) time complexity?', 'options': ['Linear', 'Logarithmic', 'Linearithmic', 'Quadratic'], 'correct_index': 2, 'explanation': 'O(n log n) is called linearithmic complexity. Common in efficient sorting algorithms like merge sort and heap sort.', 'topic': 'Algorithms', 'difficulty': 'Medium'},
+                {'id': 4, 'question': 'What is the main benefit of using version control systems like Git?', 'options': ['Faster code execution', 'Track changes and collaborate', 'Automatic code optimization', 'Database management'], 'correct_index': 1, 'explanation': 'Git allows teams to track every change, collaborate without conflicts, and revert to any previous state of the codebase.', 'topic': 'Tools', 'difficulty': 'Easy'},
+                {'id': 5, 'question': 'In REST APIs, which HTTP method is idempotent and used for updates?', 'options': ['POST', 'GET', 'PUT', 'DELETE'], 'correct_index': 2, 'explanation': 'PUT is idempotent — calling it multiple times with the same data produces the same result. It is used for full resource updates.', 'topic': 'APIs', 'difficulty': 'Medium'},
+            ]
+        }
+
+
+def generate_prep_final_report(role: str, stacks: list, level: str, quiz_score: int, total_questions: int, tab_switches: int, wrong_topics: list, time_per_q_avg: float, user_id: str = None) -> dict:
+    """Generate a comprehensive readiness report after completing the interview prep quiz."""
+    stacks_text = ', '.join(stacks) if stacks else role
+    accuracy = round((quiz_score / max(total_questions, 1)) * 100)
+    integrity_score = max(0, 100 - (tab_switches * 15))
+
+    prompt = (
+        'Generate a comprehensive interview readiness report.\n\n'
+        'Role: ' + role + '\n'
+        'Stack: ' + stacks_text + '\n'
+        'Level: ' + level + '\n'
+        'Quiz Score: ' + str(quiz_score) + '/' + str(total_questions) + ' (' + str(accuracy) + '%)\n'
+        'Tab Switches (integrity): ' + str(tab_switches) + '\n'
+        'Weak Topics: ' + json.dumps(wrong_topics) + '\n'
+        'Avg Time Per Question: ' + str(round(time_per_q_avg)) + ' seconds\n\n'
+        'Be honest, specific, and actionable.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "readiness_score": 0-100,\n'
+        '  "verdict": "Apply Now|Almost Ready|Needs Practice|Not Ready",\n'
+        '  "verdict_explanation": "2 sentence explanation of verdict",\n'
+        '  "knowledge_score": 0-100,\n'
+        '  "speed_score": 0-100,\n'
+        '  "integrity_score": 0-100,\n'
+        '  "strong_topics": ["topic1", "topic2"],\n'
+        '  "weak_topics": ["topic1", "topic2"],\n'
+        '  "personalized_feedback": "3-4 sentence honest feedback based on performance",\n'
+        '  "next_steps": ["step1", "step2", "step3"],\n'
+        '  "estimated_days_to_ready": 0,\n'
+        '  "mock_interview_recommended": true,\n'
+        '  "motivational_closing": "Short powerful closing message"\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Prep report generation failed: {e}')
+        readiness = min(int(accuracy * 0.6 + integrity_score * 0.2 + min(100, (45 - time_per_q_avg) * 2) * 0.2), 100)
+        readiness = max(readiness, 10)
+        return {
+            'readiness_score': readiness,
+            'verdict': 'Apply Now' if readiness >= 80 else 'Almost Ready' if readiness >= 65 else 'Needs Practice' if readiness >= 45 else 'Not Ready',
+            'verdict_explanation': f'You scored {accuracy}% on the knowledge quiz. {"Your integrity score was affected by tab switches." if tab_switches > 0 else "Your integrity was perfect."}',
+            'knowledge_score': accuracy,
+            'speed_score': max(0, min(100, int((45 - time_per_q_avg) * 2.5))),
+            'integrity_score': integrity_score,
+            'strong_topics': ['Core concepts', 'Fundamentals'],
+            'weak_topics': wrong_topics[:3] if wrong_topics else ['Review weak areas'],
+            'personalized_feedback': f'You completed the {role} prep quiz with {accuracy}% accuracy. Focus on your weak topics before applying.',
+            'next_steps': ['Review weak topics', 'Practice daily coding', 'Do a mock interview'],
+            'estimated_days_to_ready': 0 if readiness >= 80 else 3 if readiness >= 65 else 7 if readiness >= 45 else 14,
+            'mock_interview_recommended': True,
+            'motivational_closing': 'Keep pushing — every practice session brings you closer to your goal!'
+        }

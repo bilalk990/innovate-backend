@@ -620,3 +620,96 @@ class CareerPathView(APIView):
         except Exception as e:
             logger.error(f'[CareerPath] Failed: {e}')
             return Response({'error': f'Career path recommendation failed: {str(e)}'}, status=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTERVIEW PREP LAB VIEWS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class InterviewPrepPlanView(APIView):
+    """POST /api/auth/interview-prep/plan/ — Generate AI interview prep roadmap."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_interview_prep_plan
+        role = request.data.get('role', '').strip()
+        stacks = request.data.get('stacks', [])
+        level = request.data.get('level', 'mid').strip()
+
+        if not role:
+            return Response({'error': 'role is required.'}, status=400)
+        if not isinstance(stacks, list):
+            stacks = [stacks] if stacks else []
+        if level not in ['junior', 'mid', 'senior']:
+            level = 'mid'
+
+        try:
+            result = generate_interview_prep_plan(
+                role=role, stacks=stacks, level=level, user_id=str(request.user.id)
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PrepPlan] Failed: {e}')
+            return Response({'error': f'Plan generation failed: {str(e)}'}, status=500)
+
+
+class InterviewPrepQuizView(APIView):
+    """POST /api/auth/interview-prep/quiz/ — Generate stack-specific MCQ quiz."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_interview_mcq_quiz
+        role = request.data.get('role', '').strip()
+        stacks = request.data.get('stacks', [])
+        level = request.data.get('level', 'mid').strip()
+        count = int(request.data.get('count', 10))
+
+        if not role:
+            return Response({'error': 'role is required.'}, status=400)
+        if not isinstance(stacks, list):
+            stacks = [stacks] if stacks else []
+        count = max(5, min(count, 15))
+
+        try:
+            result = generate_interview_mcq_quiz(
+                role=role, stacks=stacks, level=level, count=count, user_id=str(request.user.id)
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PrepQuiz] Failed: {e}')
+            return Response({'error': f'Quiz generation failed: {str(e)}'}, status=500)
+
+
+class InterviewPrepReportView(APIView):
+    """POST /api/auth/interview-prep/report/ — Generate final readiness report."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_prep_final_report
+        role = request.data.get('role', '').strip()
+        stacks = request.data.get('stacks', [])
+        level = request.data.get('level', 'mid').strip()
+        quiz_score = int(request.data.get('quiz_score', 0))
+        total_questions = int(request.data.get('total_questions', 10))
+        tab_switches = int(request.data.get('tab_switches', 0))
+        wrong_topics = request.data.get('wrong_topics', [])
+        time_per_q_avg = float(request.data.get('time_per_q_avg', 30))
+
+        if not role:
+            return Response({'error': 'role is required.'}, status=400)
+        if not isinstance(stacks, list):
+            stacks = [stacks] if stacks else []
+        if not isinstance(wrong_topics, list):
+            wrong_topics = []
+
+        try:
+            result = generate_prep_final_report(
+                role=role, stacks=stacks, level=level,
+                quiz_score=quiz_score, total_questions=total_questions,
+                tab_switches=tab_switches, wrong_topics=wrong_topics,
+                time_per_q_avg=time_per_q_avg, user_id=str(request.user.id)
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PrepReport] Failed: {e}')
+            return Response({'error': f'Report generation failed: {str(e)}'}, status=500)
