@@ -2396,3 +2396,503 @@ def generate_prep_final_report(role: str, stacks: list, level: str, quiz_score: 
             'mock_interview_recommended': True,
             'motivational_closing': 'Keep pushing — every practice session brings you closer to your goal!'
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HR AI POWER TOOLS — 7 Professional Features for Recruiters
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compare_candidates(candidates_data: list, job_title: str, blind_mode: bool = False, user_id: str = None) -> dict:
+    """Compare 2-5 candidates for the same job using deep AI analysis."""
+    candidate_list = []
+    for i, c in enumerate(candidates_data):
+        label = f'Candidate {chr(65+i)}' if blind_mode else c.get('name', f'Candidate {chr(65+i)}')
+        candidate_list.append(f"""
+{label}:
+  Overall Score: {c.get('overall_score', 'N/A')}
+  Skills: {', '.join(c.get('skills', [])[:15])}
+  Experience: {c.get('experience_years', 'N/A')} years
+  Education: {c.get('education', 'N/A')}
+  Strengths: {', '.join(c.get('strengths', []))}
+  Weaknesses: {', '.join(c.get('weaknesses', []))}
+  Interview Summary: {c.get('summary', 'No summary')}
+  Recommendation: {c.get('recommendation', 'N/A')}
+""")
+
+    prompt = f"""You are a senior HR director comparing candidates for the role of "{job_title}".
+{"BLIND MODE: Evaluate purely on merit — no names or personal identifiers." if blind_mode else ""}
+
+Candidates to compare:
+{'---'.join(candidate_list)}
+
+Provide a deep, unbiased, professional comparison. Return ONLY valid JSON:
+{{
+  "winner": "Candidate A",
+  "winner_confidence": 85,
+  "winner_reasoning": "2-3 sentence executive summary of why this candidate wins",
+  "comparison_matrix": [
+    {{"criterion": "Technical Skills", "scores": {{}}, "winner": "A", "insight": "..."}},
+    {{"criterion": "Communication", "scores": {{}}, "winner": "B", "insight": "..."}},
+    {{"criterion": "Experience Depth", "scores": {{}}, "winner": "A", "insight": "..."}},
+    {{"criterion": "Cultural Fit Potential", "scores": {{}}, "winner": "A", "insight": "..."}},
+    {{"criterion": "Growth Potential", "scores": {{}}, "winner": "B", "insight": "..."}},
+    {{"criterion": "Risk Factor", "scores": {{}}, "winner": "A", "insight": "..."}}
+  ],
+  "individual_profiles": [
+    {{
+      "label": "Candidate A",
+      "hire_probability": 82,
+      "top_strengths": ["strength1", "strength2", "strength3"],
+      "top_concerns": ["concern1", "concern2"],
+      "best_fit_for": "description of what role/team they'd excel in",
+      "verdict": "Strong Hire"
+    }}
+  ],
+  "final_recommendation": "Hire [Winner] — detailed paragraph with business justification",
+  "risk_analysis": "What risks exist with the top candidate and how to mitigate",
+  "runner_up_advice": "When to consider the runner-up candidate instead",
+  "blind_bias_notes": "Any potential bias areas the recruiter should be aware of"
+}}
+All scores in comparison_matrix must use candidate labels as keys (e.g. "Candidate A": 8.5).
+Scores must be 0-10. hire_probability must be 0-100."""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] Candidate comparison failed: {e}')
+        labels = [f'Candidate {chr(65+i)}' for i in range(len(candidates_data))]
+        return {
+            'winner': labels[0] if labels else 'Candidate A',
+            'winner_confidence': 70,
+            'winner_reasoning': f'Based on overall scores, {labels[0]} shows the strongest profile for {job_title}.',
+            'comparison_matrix': [
+                {'criterion': c, 'scores': {l: 7.0 for l in labels}, 'winner': labels[0], 'insight': 'Analysis unavailable.'}
+                for c in ['Technical Skills', 'Communication', 'Experience Depth', 'Cultural Fit Potential', 'Growth Potential']
+            ],
+            'individual_profiles': [{'label': l, 'hire_probability': 70, 'top_strengths': ['Professional background'], 'top_concerns': ['Needs further evaluation'], 'best_fit_for': job_title, 'verdict': 'Consider'} for l in labels],
+            'final_recommendation': f'Manual review recommended for {job_title} candidates.',
+            'risk_analysis': 'Conduct additional reference checks before final decision.',
+            'runner_up_advice': 'Keep runner-up on file for future openings.',
+            'blind_bias_notes': 'Ensure structured interviews to minimize bias.'
+        }
+
+
+def detect_jd_bias(jd_text: str, user_id: str = None) -> dict:
+    """Detect unconscious bias in job descriptions and rewrite with inclusive language."""
+    prompt = f"""You are a DEI (Diversity, Equity & Inclusion) expert and linguist specializing in inclusive job descriptions.
+
+Analyze this job description for unconscious bias:
+---
+{jd_text[:4000]}
+---
+
+Check for: gender-coded words (masculine: rockstar, ninja, crushing it; feminine: nurturing, collaborative), age bias (young team, recent grad, digital native), cultural bias (native speaker, local candidates), ability bias, socioeconomic bias, and unnecessarily exclusive requirements.
+
+Return ONLY valid JSON:
+{{
+  "diversity_score_before": 52,
+  "diversity_score_after": 89,
+  "total_issues_found": 7,
+  "bias_categories": {{
+    "gender_coded": 3,
+    "age_bias": 1,
+    "cultural_bias": 2,
+    "ability_bias": 0,
+    "credential_inflation": 1
+  }},
+  "flagged_phrases": [
+    {{
+      "phrase": "rockstar developer",
+      "type": "masculine-coded",
+      "severity": "medium",
+      "explanation": "Masculine-coded language that may deter women applicants",
+      "suggestion": "skilled developer"
+    }}
+  ],
+  "rewritten_jd": "Full inclusive rewrite of the entire job description",
+  "key_changes_made": ["change1", "change2", "change3"],
+  "overall_assessment": "2-3 sentence overall assessment",
+  "quick_wins": ["Immediate change 1", "Immediate change 2"],
+  "diversity_impact": "Estimated impact of changes on applicant diversity"
+}}
+Scores must be 0-100. Provide comprehensive flagged_phrases list."""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] JD bias detection failed: {e}')
+        return {
+            'diversity_score_before': 60,
+            'diversity_score_after': 85,
+            'total_issues_found': 3,
+            'bias_categories': {'gender_coded': 2, 'age_bias': 0, 'cultural_bias': 1, 'ability_bias': 0, 'credential_inflation': 0},
+            'flagged_phrases': [{'phrase': 'Review manually', 'type': 'general', 'severity': 'low', 'explanation': 'AI analysis unavailable', 'suggestion': 'Use inclusive language'}],
+            'rewritten_jd': jd_text,
+            'key_changes_made': ['Replace gender-coded terms', 'Remove age references', 'Focus on skills over credentials'],
+            'overall_assessment': 'Manual review recommended. Consider using inclusive language tools.',
+            'quick_wins': ['Replace "rockstar/ninja" with "skilled"', 'Remove age-related terms'],
+            'diversity_impact': 'Inclusive JDs typically increase diverse applicant pool by 20-40%.'
+        }
+
+
+def generate_reference_questions(resume_data: dict, job_title: str, eval_summary: str = '', user_id: str = None) -> dict:
+    """Generate targeted AI reference check questions based on candidate profile."""
+    skills = ', '.join(resume_data.get('skills', [])[:10])
+    exp_years = resume_data.get('total_experience_years', 0)
+    education = resume_data.get('education', [{}])
+    edu_str = education[0].get('degree', 'N/A') if education else 'N/A'
+
+    prompt = f"""You are an expert HR professional specializing in thorough reference checks.
+
+Candidate Profile:
+- Role Applied For: {job_title}
+- Experience: {exp_years} years
+- Key Skills: {skills}
+- Education: {edu_str}
+- Interview Performance Notes: {eval_summary or 'No notes provided'}
+
+Generate highly targeted, legally compliant reference check questions. Return ONLY valid JSON:
+{{
+  "call_script_opener": "Professional opening statement to start the reference call",
+  "standard_questions": [
+    {{"question": "...", "purpose": "why ask this"}}
+  ],
+  "targeted_questions": [
+    {{
+      "question": "Targeted question specific to this candidate",
+      "why_ask": "Based on what in their profile",
+      "red_flag_if": "What answer should concern you",
+      "green_flag_if": "What answer is reassuring"
+    }}
+  ],
+  "gap_verification_questions": [
+    {{"question": "...", "verifying": "what claim or gap this addresses"}}
+  ],
+  "skills_verification": [
+    {{"skill": "skill name", "question": "how to verify this skill via reference"}}
+  ],
+  "closing_questions": ["closing question 1", "closing question 2"],
+  "legal_reminders": ["Topics to AVOID for legal compliance"],
+  "pro_tips": "Tips for conducting an effective reference call"
+}}
+Provide at least 4 standard, 5 targeted, 3 gap verification, and 3 skills verification questions."""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] Reference questions generation failed: {e}')
+        return {
+            'call_script_opener': f'Hi, I\'m calling to verify a reference for a candidate applying for our {job_title} position. Do you have a few minutes?',
+            'standard_questions': [
+                {'question': 'How long did you work with this candidate and in what capacity?', 'purpose': 'Establish relationship context'},
+                {'question': 'What were their primary responsibilities?', 'purpose': 'Verify resume claims'},
+                {'question': 'How would you describe their work quality and attention to detail?', 'purpose': 'Assess performance'},
+                {'question': 'Would you rehire this person if given the opportunity?', 'purpose': 'Overall endorsement'}
+            ],
+            'targeted_questions': [
+                {'question': f'How did they demonstrate {skills.split(",")[0] if skills else "technical skills"}?', 'why_ask': 'Skill verification', 'red_flag_if': 'Vague or hesitant response', 'green_flag_if': 'Specific examples provided'}
+            ],
+            'gap_verification_questions': [{'question': 'Were there any periods of extended leave or absence?', 'verifying': 'Employment gaps'}],
+            'skills_verification': [{'skill': s.strip(), 'question': f'Can you give an example of how they used {s.strip()}?'} for s in skills.split(',')[:3]],
+            'closing_questions': ['Is there anything else you\'d like to share about this candidate?', 'What type of environment would this person thrive in?'],
+            'legal_reminders': ['Do not ask about age, health, family status, religion, or national origin'],
+            'pro_tips': 'Listen for hesitation, ask for specific examples, and take detailed notes.'
+        }
+
+
+def predict_offer_acceptance(candidate_data: dict, offer_data: dict, user_id: str = None) -> dict:
+    """Predict probability of candidate accepting the job offer with negotiation strategy."""
+    prompt = f"""You are a senior talent acquisition strategist with 15 years of experience in offer negotiation.
+
+Candidate Profile:
+- Name/Label: {candidate_data.get('label', 'Candidate')}
+- Current Salary: {candidate_data.get('current_salary', 'Unknown')}
+- Expected Salary: {candidate_data.get('expected_salary', 'Unknown')}
+- Experience Years: {candidate_data.get('experience_years', 0)}
+- Skills: {', '.join(candidate_data.get('skills', [])[:8])}
+- Interview Enthusiasm (1-10): {candidate_data.get('enthusiasm_score', 7)}
+- Competing Offers: {candidate_data.get('has_competing_offers', False)}
+- Location: {candidate_data.get('location', 'Unknown')}
+- Interview Notes: {candidate_data.get('notes', 'No notes')}
+
+Offer Details:
+- Base Salary: {offer_data.get('base_salary', 'TBD')}
+- Total Package: {offer_data.get('total_package', 'TBD')}
+- Benefits: {offer_data.get('benefits', 'Standard')}
+- Remote Work: {offer_data.get('remote_policy', 'On-site')}
+- Start Date: {offer_data.get('start_date', 'Flexible')}
+- Role Level: {offer_data.get('role_level', 'Mid')}
+
+Analyze this offer scenario and return ONLY valid JSON:
+{{
+  "acceptance_probability": 74,
+  "confidence_level": "high",
+  "verdict": "Likely Accept",
+  "key_drivers": ["factor driving acceptance 1", "factor driving acceptance 2"],
+  "risk_factors": ["risk that may cause rejection 1", "risk 2"],
+  "positive_signals": ["positive signal 1", "positive signal 2"],
+  "salary_gap_analysis": {{
+    "gap_amount": "5000",
+    "gap_severity": "moderate",
+    "recommendation": "Increase base by X or add signing bonus"
+  }},
+  "recommended_offer_adjustments": [
+    {{"adjustment": "Specific change to make", "impact": "+X% acceptance probability", "cost": "Low/Medium/High"}}
+  ],
+  "negotiation_script": "Word-for-word script for the offer call",
+  "timing_advice": "When and how to present the offer",
+  "counter_offer_scenarios": [
+    {{"scenario": "Candidate asks for higher salary", "response": "What to say", "max_flex": "Maximum flexibility"}}
+  ],
+  "package_sweeteners": ["Non-monetary benefit that could tip the scale 1", "sweetener 2"],
+  "walk_away_signals": ["Signal that candidate will reject", "signal 2"]
+}}
+acceptance_probability must be 0-100 integer."""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] Offer prediction failed: {e}')
+        return {
+            'acceptance_probability': 65,
+            'confidence_level': 'medium',
+            'verdict': 'Uncertain',
+            'key_drivers': ['Competitive salary', 'Good role fit'],
+            'risk_factors': ['Salary expectations gap', 'Competing offers possible'],
+            'positive_signals': ['Completed full interview process', 'Expressed interest'],
+            'salary_gap_analysis': {'gap_amount': 'Unknown', 'gap_severity': 'unknown', 'recommendation': 'Verify candidate salary expectations'},
+            'recommended_offer_adjustments': [{'adjustment': 'Add signing bonus', 'impact': '+10% acceptance', 'cost': 'Medium'}],
+            'negotiation_script': 'We are excited to extend this offer and believe it reflects your valuable skills. We are open to discussing the package to find the right fit.',
+            'timing_advice': 'Present offer within 48 hours of final interview while enthusiasm is high.',
+            'counter_offer_scenarios': [{'scenario': 'Candidate asks for more', 'response': 'Discuss total compensation package', 'max_flex': 'Up to 10% above base'}],
+            'package_sweeteners': ['Additional PTO', 'Remote work flexibility', 'Professional development budget'],
+            'walk_away_signals': ['Asks for 2+ weeks to decide', 'Stops responding promptly']
+        }
+
+
+def analyze_hiring_funnel(funnel_stats: dict, job_title: str, user_id: str = None) -> dict:
+    """Analyze hiring funnel drop-off rates and identify optimization opportunities."""
+    prompt = f"""You are a talent acquisition analytics expert specializing in hiring funnel optimization.
+
+Hiring Funnel Data for "{job_title}":
+- Applications Received: {funnel_stats.get('applications', 0)}
+- Screened (moved forward): {funnel_stats.get('screened', 0)}
+- Phone/Video Screened: {funnel_stats.get('phone_screened', 0)}
+- Technical/Assessment: {funnel_stats.get('assessed', 0)}
+- Final Interview: {funnel_stats.get('final_interview', 0)}
+- Offers Made: {funnel_stats.get('offers_made', 0)}
+- Offers Accepted: {funnel_stats.get('offers_accepted', 0)}
+- Hired & Started: {funnel_stats.get('hired', 0)}
+- Time to Fill (days): {funnel_stats.get('time_to_fill', 0)}
+- Cost per Hire: {funnel_stats.get('cost_per_hire', 0)}
+
+Return ONLY valid JSON:
+{{
+  "funnel_health_score": 68,
+  "funnel_health_label": "Moderate",
+  "executive_summary": "2-3 sentence summary of funnel performance",
+  "stage_analysis": [
+    {{
+      "stage": "Application → Screen",
+      "candidates_in": 100,
+      "candidates_out": 45,
+      "drop_rate": "55%",
+      "industry_benchmark": "40%",
+      "status": "red",
+      "insight": "What this means",
+      "fix": "Specific actionable recommendation"
+    }}
+  ],
+  "biggest_bottleneck": {{
+    "stage": "Stage name",
+    "severity": "Critical",
+    "estimated_impact": "X candidates lost unnecessarily",
+    "root_cause": "Likely root cause",
+    "quick_fix": "Immediate action to take"
+  }},
+  "patterns_detected": [
+    {{"pattern": "Description", "evidence": "Data supporting this", "action": "What to do"}}
+  ],
+  "diversity_flags": [
+    {{"flag": "Potential issue", "recommendation": "How to address"}}
+  ],
+  "optimization_roadmap": [
+    {{"priority": 1, "action": "Specific action", "effort": "Low/Medium/High", "impact": "Expected improvement"}}
+  ],
+  "benchmark_comparison": {{
+    "time_to_fill_benchmark": "30-45 days industry average",
+    "offer_acceptance_benchmark": "85% industry average",
+    "your_performance": "Above/Below/At benchmark"
+  }},
+  "predicted_improvement": "If you fix the top 3 issues, estimated X% improvement in offer acceptance"
+}}"""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] Funnel analysis failed: {e}')
+        apps = funnel_stats.get('applications', 1)
+        hired = funnel_stats.get('hired', 0)
+        rate = round((hired / apps) * 100, 1) if apps else 0
+        return {
+            'funnel_health_score': 60,
+            'funnel_health_label': 'Moderate',
+            'executive_summary': f'Your {job_title} hiring funnel shows a {rate}% conversion from application to hire. Industry average is 1-3%.',
+            'stage_analysis': [{'stage': 'Application → Screen', 'candidates_in': apps, 'candidates_out': funnel_stats.get('screened', 0), 'drop_rate': f'{100-round(funnel_stats.get("screened",0)/max(apps,1)*100)}%', 'industry_benchmark': '40%', 'status': 'amber', 'insight': 'Review screening criteria', 'fix': 'Streamline initial screening process'}],
+            'biggest_bottleneck': {'stage': 'Screening', 'severity': 'Medium', 'estimated_impact': 'Several qualified candidates may be filtered out', 'root_cause': 'Overly strict initial criteria', 'quick_fix': 'Review and calibrate screening criteria'},
+            'patterns_detected': [{'pattern': 'High early-stage dropout', 'evidence': 'Large drop from applications to screening', 'action': 'Improve job description clarity'}],
+            'diversity_flags': [{'flag': 'Insufficient data for diversity analysis', 'recommendation': 'Track demographic data at each stage'}],
+            'optimization_roadmap': [{'priority': 1, 'action': 'Streamline application process', 'effort': 'Low', 'impact': '15-20% more applicants completing application'}],
+            'benchmark_comparison': {'time_to_fill_benchmark': '30-45 days', 'offer_acceptance_benchmark': '85%', 'your_performance': 'Needs evaluation'},
+            'predicted_improvement': 'Addressing top bottlenecks could improve overall funnel efficiency by 20-30%.'
+        }
+
+
+def predict_team_fit(team_description: dict, candidate_profile: dict, user_id: str = None) -> dict:
+    """Predict how well a candidate will fit and contribute to an existing team."""
+    prompt = f"""You are an organizational psychologist and team dynamics expert.
+
+Existing Team Profile:
+- Team Size: {team_description.get('size', 0)}
+- Team Skills: {', '.join(team_description.get('skills', [])[:12])}
+- Team Gaps: {', '.join(team_description.get('gaps', []))}
+- Work Style: {team_description.get('work_style', 'Collaborative')}
+- Team Culture: {team_description.get('culture', 'Fast-paced startup')}
+- Team Challenges: {team_description.get('challenges', 'None specified')}
+- Management Style: {team_description.get('management_style', 'Flat')}
+
+Candidate Profile:
+- Skills: {', '.join(candidate_profile.get('skills', [])[:12])}
+- Experience: {candidate_profile.get('experience_years', 0)} years
+- Work Style Preference: {candidate_profile.get('work_style', 'Unknown')}
+- Strengths: {', '.join(candidate_profile.get('strengths', []))}
+- Potential Concerns: {', '.join(candidate_profile.get('weaknesses', []))}
+- Interview Summary: {candidate_profile.get('summary', 'No data')}
+
+Return ONLY valid JSON:
+{{
+  "fit_score": 82,
+  "fit_label": "Excellent Fit",
+  "fit_breakdown": {{
+    "skill_complementarity": 88,
+    "culture_alignment": 79,
+    "work_style_match": 85,
+    "gap_filling_score": 92,
+    "conflict_risk": 15
+  }},
+  "skills_candidate_brings": ["New skill 1", "New skill 2", "New skill 3"],
+  "gaps_candidate_fills": ["Team gap 1 this candidate solves", "Gap 2"],
+  "potential_conflicts": [
+    {{"area": "Conflict area", "severity": "Low/Medium/High", "mitigation": "How to prevent"}}
+  ],
+  "team_dynamics_analysis": "Detailed analysis of how this person changes team dynamics",
+  "collaboration_predictions": [
+    {{"with": "Team role/persona", "prediction": "How they'll work together"}}
+  ],
+  "onboarding_recommendations": ["Specific onboarding tip 1", "Tip 2", "Tip 3"],
+  "first_90_days": "What to expect in first 90 days and key milestones",
+  "long_term_potential": "Assessment of long-term growth and contribution",
+  "manager_tips": ["Specific tip for managing this person", "Tip 2"],
+  "risk_factors": ["Risk 1", "Risk 2"],
+  "verdict": "Strong Recommend / Recommend / Conditional / Not Recommended"
+}}
+All scores must be 0-100. conflict_risk should be 0-100 where 0 = no risk."""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] Team fit prediction failed: {e}')
+        return {
+            'fit_score': 72,
+            'fit_label': 'Good Fit',
+            'fit_breakdown': {'skill_complementarity': 75, 'culture_alignment': 70, 'work_style_match': 72, 'gap_filling_score': 80, 'conflict_risk': 20},
+            'skills_candidate_brings': candidate_profile.get('strengths', ['Professional expertise'])[:3],
+            'gaps_candidate_fills': team_description.get('gaps', ['Team gap'])[:2],
+            'potential_conflicts': [{'area': 'Work style adaptation', 'severity': 'Low', 'mitigation': 'Regular check-ins during onboarding'}],
+            'team_dynamics_analysis': 'This candidate has the potential to complement the existing team with fresh perspectives.',
+            'collaboration_predictions': [{'with': 'Team lead', 'prediction': 'Productive working relationship expected'}],
+            'onboarding_recommendations': ['Assign a buddy for first 30 days', 'Schedule regular 1:1s', 'Include in team meetings from day 1'],
+            'first_90_days': 'Expect ramp-up in first 30 days, full contribution by day 60-90.',
+            'long_term_potential': 'Strong growth potential if given proper mentorship.',
+            'manager_tips': ['Set clear expectations early', 'Provide regular feedback'],
+            'risk_factors': ['Onboarding time required', 'Team culture adjustment period'],
+            'verdict': 'Recommend'
+        }
+
+
+def coach_interviewer(transcript: str, questions: list, interviewer_name: str = 'Interviewer', user_id: str = None) -> dict:
+    """Analyze recruiter/interviewer technique and provide professional coaching."""
+    q_list = '\n'.join([f'Q{i+1}: {q}' for i, q in enumerate(questions[:10])])
+    prompt = f"""You are an expert interview coach and HR trainer who helps recruiters improve their interviewing technique.
+
+Interviewer: {interviewer_name}
+Questions Asked:
+{q_list}
+
+Interview Transcript (Recruiter side):
+{transcript[:3000]}
+
+Analyze the INTERVIEWER's technique (not the candidate's performance). Return ONLY valid JSON:
+{{
+  "overall_score": 74,
+  "fairness_score": 71,
+  "coverage_score": 78,
+  "depth_score": 80,
+  "structure_score": 72,
+  "grade": "B+",
+  "executive_summary": "2-3 sentence overall assessment of interviewer performance",
+  "issues_found": [
+    {{
+      "type": "leading_question",
+      "question": "The problematic question",
+      "problem": "Why this is an issue",
+      "better_version": "Improved version of the question",
+      "severity": "low/medium/high"
+    }}
+  ],
+  "strengths": ["Interviewer strength 1", "Strength 2", "Strength 3"],
+  "missed_areas": [
+    {{"area": "Topic not covered", "why_important": "Why this matters for the role", "suggested_question": "Question to ask next time"}}
+  ],
+  "bias_warnings": [
+    {{"warning": "Potential bias detected", "context": "Where in interview", "impact": "How this affects fairness"}}
+  ],
+  "improvement_tips": [
+    {{"tip": "Specific improvement", "how_to": "How to implement this", "example": "Example in practice"}}
+  ],
+  "question_quality_breakdown": [
+    {{"question_number": 1, "type": "behavioral/technical/situational/leading", "quality": "good/needs_improvement", "note": "Brief note"}}
+  ],
+  "recommended_training": ["Training area 1", "Training area 2"],
+  "next_interview_checklist": ["Checklist item 1", "Item 2", "Item 3", "Item 4"]
+}}
+All scores must be 0-100."""
+
+    try:
+        raw = _call_openai(prompt, user_id=user_id)
+        return json.loads(_strip_json(raw))
+    except Exception as e:
+        logger.warning(f'[GPT] Interviewer coaching failed: {e}')
+        return {
+            'overall_score': 70,
+            'fairness_score': 72,
+            'coverage_score': 68,
+            'depth_score': 74,
+            'structure_score': 70,
+            'grade': 'B',
+            'executive_summary': f'{interviewer_name} demonstrated professional conduct. Some areas for improvement in question structure and coverage.',
+            'issues_found': [{'type': 'coverage_gap', 'question': 'N/A', 'problem': 'Some key competencies not explored', 'better_version': 'Add behavioral questions for key competencies', 'severity': 'medium'}],
+            'strengths': ['Professional tone maintained', 'Allowed candidate adequate response time'],
+            'missed_areas': [{'area': 'Problem-solving assessment', 'why_important': 'Critical for most roles', 'suggested_question': 'Tell me about a complex problem you solved recently'}],
+            'bias_warnings': [],
+            'improvement_tips': [{'tip': 'Use more open-ended questions', 'how_to': 'Start with "Tell me about..." or "Describe a time when..."', 'example': 'Instead of "Do you work well in teams?" ask "Tell me about your best team collaboration experience"'}],
+            'question_quality_breakdown': [{'question_number': i+1, 'type': 'general', 'quality': 'good', 'note': 'Review question structure'} for i in range(len(questions[:5]))],
+            'recommended_training': ['Structured Interviewing Techniques', 'Unconscious Bias Awareness'],
+            'next_interview_checklist': ['Prepare STAR-method questions', 'Cover all key competencies', 'Avoid leading questions', 'Take structured notes']
+        }

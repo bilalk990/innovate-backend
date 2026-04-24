@@ -6,6 +6,8 @@ from accounts.views import (
     SystemSettingsView, ProfileImprovementsView,
     SalaryNegotiationView, CareerPathView,
     InterviewPrepPlanView, InterviewPrepQuizView, InterviewPrepReportView,
+    CandidateComparisonView, BiasDetectorView, ReferenceCheckView,
+    OfferPredictorView, FunnelAnalyzerView, TeamFitView, InterviewerCoachView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -54,4 +56,13 @@ urlpatterns = [
     path('interview-prep/plan/', InterviewPrepPlanView.as_view(), name='interview-prep-plan'),
     path('interview-prep/quiz/', InterviewPrepQuizView.as_view(), name='interview-prep-quiz'),
     path('interview-prep/report/', InterviewPrepReportView.as_view(), name='interview-prep-report'),
+
+    # HR AI Power Tools (Recruiter)
+    path('hr/compare-candidates/', CandidateComparisonView.as_view(), name='hr-compare-candidates'),
+    path('hr/bias-detector/', BiasDetectorView.as_view(), name='hr-bias-detector'),
+    path('hr/reference-check/', ReferenceCheckView.as_view(), name='hr-reference-check'),
+    path('hr/offer-predictor/', OfferPredictorView.as_view(), name='hr-offer-predictor'),
+    path('hr/funnel-analyzer/', FunnelAnalyzerView.as_view(), name='hr-funnel-analyzer'),
+    path('hr/team-fit/', TeamFitView.as_view(), name='hr-team-fit'),
+    path('hr/interviewer-coach/', InterviewerCoachView.as_view(), name='hr-interviewer-coach'),
 ]

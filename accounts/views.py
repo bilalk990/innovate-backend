@@ -713,3 +713,284 @@ class InterviewPrepReportView(APIView):
         except Exception as e:
             logger.error(f'[PrepReport] Failed: {e}')
             return Response({'error': f'Report generation failed: {str(e)}'}, status=500)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HR AI POWER TOOLS — 7 Professional Features for Recruiters
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CandidateComparisonView(APIView):
+    """POST /api/auth/hr/compare-candidates/ — AI side-by-side candidate comparison."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import compare_candidates
+        from evaluations.models import Evaluation
+        from resumes.models import Resume
+
+        candidate_ids = request.data.get('candidate_ids', [])
+        job_title = request.data.get('job_title', '').strip()
+        blind_mode = bool(request.data.get('blind_mode', False))
+
+        if len(candidate_ids) < 2:
+            return Response({'error': 'At least 2 candidates required.'}, status=400)
+        if len(candidate_ids) > 5:
+            return Response({'error': 'Maximum 5 candidates.'}, status=400)
+        if not job_title:
+            return Response({'error': 'job_title is required.'}, status=400)
+
+        candidates_data = []
+        for cid in candidate_ids:
+            try:
+                candidate = User.objects.get(id=cid)
+                eval_obj = Evaluation.objects(candidate_id=str(cid)).order_by('-created_at').first()
+                resume = Resume.objects(candidate_id=str(cid), is_active=True).order_by('-uploaded_at').first()
+                resume_data = resume.parsed_data if resume else {}
+                candidates_data.append({
+                    'name': candidate.name if not blind_mode else f'Candidate {chr(65 + len(candidates_data))}',
+                    'overall_score': eval_obj.overall_score if eval_obj else 0,
+                    'skills': resume_data.get('skills', []),
+                    'experience_years': resume_data.get('total_experience_years', 0),
+                    'education': str(resume_data.get('education', [{}])[0].get('degree', 'N/A')) if resume_data.get('education') else 'N/A',
+                    'strengths': eval_obj.strengths if eval_obj else [],
+                    'weaknesses': eval_obj.weaknesses if eval_obj else [],
+                    'summary': eval_obj.summary if eval_obj else '',
+                    'recommendation': eval_obj.recommendation if eval_obj else 'N/A',
+                })
+            except Exception as ex:
+                logger.warning(f'[Compare] Could not load candidate {cid}: {ex}')
+                continue
+
+        if len(candidates_data) < 2:
+            return Response({'error': 'Could not load enough candidate data.'}, status=400)
+
+        try:
+            result = compare_candidates(candidates_data, job_title, blind_mode, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[Compare] Failed: {e}')
+            return Response({'error': f'Comparison failed: {str(e)}'}, status=500)
+
+
+class BiasDetectorView(APIView):
+    """POST /api/auth/hr/bias-detector/ — Detect and rewrite biased job descriptions."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import detect_jd_bias
+        jd_text = request.data.get('jd_text', '').strip()
+        if not jd_text:
+            return Response({'error': 'jd_text is required.'}, status=400)
+        if len(jd_text) < 50:
+            return Response({'error': 'JD too short — provide full job description.'}, status=400)
+        try:
+            result = detect_jd_bias(jd_text, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[BiasDetector] Failed: {e}')
+            return Response({'error': f'Bias detection failed: {str(e)}'}, status=500)
+
+
+class ReferenceCheckView(APIView):
+    """POST /api/auth/hr/reference-check/ — Generate targeted AI reference check questions."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import generate_reference_questions
+        from resumes.models import Resume
+        from evaluations.models import Evaluation
+
+        candidate_id = request.data.get('candidate_id', '').strip()
+        job_title = request.data.get('job_title', '').strip()
+
+        if not job_title:
+            return Response({'error': 'job_title is required.'}, status=400)
+
+        resume_data = {}
+        eval_summary = ''
+        if candidate_id:
+            try:
+                resume = Resume.objects(candidate_id=candidate_id, is_active=True).order_by('-uploaded_at').first()
+                resume_data = resume.parsed_data if resume else {}
+                eval_obj = Evaluation.objects(candidate_id=candidate_id).order_by('-created_at').first()
+                eval_summary = eval_obj.summary if eval_obj else ''
+            except Exception:
+                pass
+
+        try:
+            result = generate_reference_questions(resume_data, job_title, eval_summary, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[ReferenceCheck] Failed: {e}')
+            return Response({'error': f'Reference question generation failed: {str(e)}'}, status=500)
+
+
+class OfferPredictorView(APIView):
+    """POST /api/auth/hr/offer-predictor/ — Predict offer acceptance probability."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import predict_offer_acceptance
+        from resumes.models import Resume
+        from evaluations.models import Evaluation
+
+        candidate_id = request.data.get('candidate_id', '').strip()
+        offer_data = {
+            'base_salary': request.data.get('base_salary', 'Not specified'),
+            'total_package': request.data.get('total_package', 'Not specified'),
+            'benefits': request.data.get('benefits', 'Standard benefits'),
+            'remote_policy': request.data.get('remote_policy', 'On-site'),
+            'start_date': request.data.get('start_date', 'Flexible'),
+            'role_level': request.data.get('role_level', 'Mid'),
+        }
+
+        candidate_data = {
+            'label': request.data.get('candidate_name', 'Candidate'),
+            'current_salary': request.data.get('current_salary', 'Unknown'),
+            'expected_salary': request.data.get('expected_salary', 'Unknown'),
+            'enthusiasm_score': int(request.data.get('enthusiasm_score', 7)),
+            'has_competing_offers': bool(request.data.get('has_competing_offers', False)),
+            'notes': request.data.get('notes', ''),
+        }
+
+        if candidate_id:
+            try:
+                resume = Resume.objects(candidate_id=candidate_id, is_active=True).order_by('-uploaded_at').first()
+                if resume:
+                    rd = resume.parsed_data or {}
+                    candidate_data['skills'] = rd.get('skills', [])
+                    candidate_data['experience_years'] = rd.get('total_experience_years', 0)
+                    candidate_data['location'] = rd.get('location', 'Unknown')
+                eval_obj = Evaluation.objects(candidate_id=candidate_id).order_by('-created_at').first()
+                if eval_obj:
+                    candidate_data['notes'] += f' Evaluation: {eval_obj.summary}'
+            except Exception:
+                pass
+
+        try:
+            result = predict_offer_acceptance(candidate_data, offer_data, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[OfferPredictor] Failed: {e}')
+            return Response({'error': f'Offer prediction failed: {str(e)}'}, status=500)
+
+
+class FunnelAnalyzerView(APIView):
+    """POST /api/auth/hr/funnel-analyzer/ — AI hiring funnel drop-off analysis."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import analyze_hiring_funnel
+        job_title = request.data.get('job_title', '').strip()
+        if not job_title:
+            return Response({'error': 'job_title is required.'}, status=400)
+
+        funnel_stats = {
+            'applications': int(request.data.get('applications', 0)),
+            'screened': int(request.data.get('screened', 0)),
+            'phone_screened': int(request.data.get('phone_screened', 0)),
+            'assessed': int(request.data.get('assessed', 0)),
+            'final_interview': int(request.data.get('final_interview', 0)),
+            'offers_made': int(request.data.get('offers_made', 0)),
+            'offers_accepted': int(request.data.get('offers_accepted', 0)),
+            'hired': int(request.data.get('hired', 0)),
+            'time_to_fill': int(request.data.get('time_to_fill', 0)),
+            'cost_per_hire': int(request.data.get('cost_per_hire', 0)),
+        }
+
+        try:
+            result = analyze_hiring_funnel(funnel_stats, job_title, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[FunnelAnalyzer] Failed: {e}')
+            return Response({'error': f'Funnel analysis failed: {str(e)}'}, status=500)
+
+
+class TeamFitView(APIView):
+    """POST /api/auth/hr/team-fit/ — Predict candidate fit with existing team."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import predict_team_fit
+        from resumes.models import Resume
+        from evaluations.models import Evaluation
+
+        candidate_id = request.data.get('candidate_id', '').strip()
+        team_description = {
+            'size': int(request.data.get('team_size', 5)),
+            'skills': [s.strip() for s in request.data.get('team_skills', '').split(',') if s.strip()],
+            'gaps': [g.strip() for g in request.data.get('team_gaps', '').split(',') if g.strip()],
+            'work_style': request.data.get('work_style', 'Collaborative'),
+            'culture': request.data.get('team_culture', 'Professional'),
+            'challenges': request.data.get('team_challenges', 'None specified'),
+            'management_style': request.data.get('management_style', 'Flat'),
+        }
+
+        candidate_profile = {'skills': [], 'experience_years': 0, 'strengths': [], 'weaknesses': [], 'summary': ''}
+        if candidate_id:
+            try:
+                resume = Resume.objects(candidate_id=candidate_id, is_active=True).order_by('-uploaded_at').first()
+                if resume:
+                    rd = resume.parsed_data or {}
+                    candidate_profile['skills'] = rd.get('skills', [])
+                    candidate_profile['experience_years'] = rd.get('total_experience_years', 0)
+                eval_obj = Evaluation.objects(candidate_id=candidate_id).order_by('-created_at').first()
+                if eval_obj:
+                    candidate_profile['strengths'] = eval_obj.strengths or []
+                    candidate_profile['weaknesses'] = eval_obj.weaknesses or []
+                    candidate_profile['summary'] = eval_obj.summary or ''
+            except Exception:
+                pass
+
+        try:
+            result = predict_team_fit(team_description, candidate_profile, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[TeamFit] Failed: {e}')
+            return Response({'error': f'Team fit analysis failed: {str(e)}'}, status=500)
+
+
+class InterviewerCoachView(APIView):
+    """POST /api/auth/hr/interviewer-coach/ — AI coaching for recruiters on interview technique."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiters only.'}, status=403)
+        from core.openai_client import coach_interviewer
+        from interviews.models import Interview
+
+        interview_id = request.data.get('interview_id', '').strip()
+        if not interview_id:
+            return Response({'error': 'interview_id is required.'}, status=400)
+
+        try:
+            interview = Interview.objects.get(id=interview_id)
+        except Exception:
+            return Response({'error': 'Interview not found.'}, status=404)
+
+        if interview.recruiter_id != str(request.user.id) and request.user.role != 'admin':
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        transcript = interview.full_transcript or ' '.join(str(v) for v in (interview.candidate_responses or {}).values())
+        questions = [q.text for q in (interview.questions or [])]
+        interviewer_name = request.user.name or 'Recruiter'
+
+        try:
+            result = coach_interviewer(transcript, questions, interviewer_name, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[InterviewerCoach] Failed: {e}')
+            return Response({'error': f'Coaching analysis failed: {str(e)}'}, status=500)
