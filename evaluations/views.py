@@ -873,12 +873,20 @@ class MockInterviewStartView(APIView):
             logger.error(f'[MockInterview] Question generation failed: {e}')
             return Response({'error': 'Failed to generate interview question.'}, status=500)
 
-        # Create session
+        # Store first question in history (without answer yet) so answer submission can find it
+        first_entry = {
+            'question': q_data.get('question', ''),
+            'question_type': q_data.get('question_type', 'behavioral'),
+            'what_to_assess': q_data.get('what_to_assess', ''),
+            'tip_for_candidate': q_data.get('tip_for_candidate', ''),
+        }
+
+        # Create session with first question already in history
         session = MockInterviewSession(
             user_id=str(request.user.id),
             role=role,
             level=level,
-            history=[],
+            history=[first_entry],
             current_question=1,
             total_questions=5,
             status='active',
