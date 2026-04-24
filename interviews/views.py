@@ -23,6 +23,13 @@ from notifications.models import Notification
 
 logger = logging.getLogger('innovaite')
 
+# Check if AI is available (same guard as engine.py)
+try:
+    from core.openai_client import analyze_response_semantics as _test_import  # noqa
+    AI_AVAILABLE = True
+except Exception:
+    AI_AVAILABLE = False
+
 
 # XSS sanitization configuration
 ALLOWED_TAGS = []  # No HTML tags allowed in responses
@@ -418,6 +425,40 @@ class SubmitResponseView(APIView):
 
         interview.updated_at = datetime.utcnow()
         interview.save()
+
+        # ── Real-time semantic pre-scoring (Solution 1: evaluate DURING interview) ──
+        # Kick off AI semantic analysis for THIS answer in a background thread.
+        # By the time the interview ends, all questions are already scored → engine skips AI calls.
+        if AI_AVAILABLE and q_idx < len(interview.questions):
+            question_obj = interview.questions[q_idx]
+            if getattr(question_obj, 'ideal_answer', ''):
+                def _precompute_semantic(iview_id, q_index, q_text, ideal_ans, resp_text, uid):
+                    try:
+                        from core.openai_client import analyze_response_semantics
+                        from interviews.models import Interview as _Interview
+                        ai_res = analyze_response_semantics(q_text, ideal_ans, resp_text, user_id=uid)
+                        # Reload + update atomically
+                        fresh = _Interview.objects.get(id=iview_id)
+                        scores = dict(fresh.semantic_scores or {})
+                        scores[str(q_index)] = {
+                            'score': ai_res.get('score', 5.0),
+                            'explanation': ai_res.get('explanation', ''),
+                            'missing_points': ai_res.get('missing_points', []),
+                            'computed_at': datetime.utcnow().isoformat(),
+                        }
+                        fresh.semantic_scores = scores
+                        fresh.save()
+                        logger.info(f'[SemanticPre] Q{q_index} scored {ai_res.get("score")} for interview {iview_id}')
+                    except Exception as sem_err:
+                        logger.warning(f'[SemanticPre] Failed for Q{q_index} interview {iview_id}: {sem_err}')
+
+                _user_id = getattr(request.user, 'id', None)
+                threading.Thread(
+                    target=_precompute_semantic,
+                    args=(str(interview.id), q_idx, question_obj.text,
+                          question_obj.ideal_answer, response_text, str(_user_id)),
+                    daemon=True
+                ).start()
 
         # --- Auto-trigger XAI evaluation when ALL questions are answered ---
         all_answered = (

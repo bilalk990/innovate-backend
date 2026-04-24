@@ -5,6 +5,7 @@ Each criterion is scored with explicit explanations so HR can understand the dec
 """
 
 import re
+import time
 import logging
 import concurrent.futures  # #63 — parallel OpenAI calls
 from accounts.models import User
@@ -297,7 +298,30 @@ def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
     responses = interview.candidate_responses or {}
     questions = interview.questions or []
     job_description = interview.job_description or ""
-    
+
+    # ── Solution 1: Smart wait for pre-computed semantic scores ──
+    # Background threads compute semantic scores as each answer is submitted.
+    # Give them up to 15s to finish before we fall back to computing inline.
+    if questions and AI_AVAILABLE:
+        q_count = len([q for q in questions if getattr(q, 'ideal_answer', '')])
+        if q_count > 0:
+            max_wait = 15  # seconds
+            waited = 0
+            while waited < max_wait:
+                fresh_scores = getattr(interview, 'semantic_scores', {}) or {}
+                scored_count = len([k for k in fresh_scores if fresh_scores[k].get('score') is not None])
+                if scored_count >= q_count:
+                    break  # All pre-scores ready
+                time.sleep(1)
+                waited += 1
+                # Reload interview to get latest semantic_scores from DB
+                try:
+                    from interviews.models import Interview as _Interview
+                    interview = _Interview.objects.get(id=interview.id)
+                except Exception:
+                    break
+            logger.info(f'[Engine] Pre-computed semantic scores: {len(getattr(interview, "semantic_scores", {}))} / {q_count} (waited {waited}s)')
+
     # Try to get company values from recruiter
     try:
         recruiter = User.objects(id=interview.recruiter_id).first()
@@ -337,7 +361,17 @@ def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
             elif criterion == 'confidence_indicators':
                 s, exp, rules, ev = score_confidence_indicators(resp)
             elif criterion == 'semantic_accuracy':
-                if AI_AVAILABLE and getattr(question, 'ideal_answer', ''):
+                # ── Solution 1: Use pre-computed score if available (evaluated during interview) ──
+                pre_scores = getattr(interview, 'semantic_scores', {}) or {}
+                pre = pre_scores.get(str(idx))
+                if pre and isinstance(pre, dict) and pre.get('score') is not None:
+                    s = float(pre['score'])
+                    exp = pre.get('explanation', 'Pre-computed semantic analysis.')
+                    ev = pre.get('missing_points', [])
+                    rules = ['RULE_AI_SEMANTIC_ANALYSIS', 'RULE_PRECOMPUTED']
+                    logger.info(f'[Engine] Q{idx} using pre-computed semantic score {s} (skipping AI call)')
+                elif AI_AVAILABLE and getattr(question, 'ideal_answer', ''):
+                    # Fallback: compute now if pre-score is missing
                     ai_res = analyze_response_semantics(question.text, question.ideal_answer, resp, user_id=user_id)
                     s, exp, rules, ev = ai_res['score'], ai_res['explanation'], ['RULE_AI_SEMANTIC_ANALYSIS'], ai_res.get('missing_points', [])
                 else:

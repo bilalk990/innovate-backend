@@ -87,6 +87,7 @@ class Interview(me.Document):
     meet_link = me.StringField(default='')  # External link (Google Meet, Zoom, etc.)
     questions = me.ListField(me.EmbeddedDocumentField(Question))
     candidate_responses = me.DictField(default={})  # question_index -> response
+    semantic_scores = me.DictField(default={})      # question_index -> {score, explanation, computed_at}
     tab_switch_count = me.IntField(default=0) # Proctoring violations
     
     # Enhanced monitoring fields
