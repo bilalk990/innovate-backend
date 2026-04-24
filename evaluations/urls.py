@@ -13,6 +13,7 @@ from evaluations.views import (
     CultureFitView,
     ExecutiveSummaryView,
     PredictHireView,
+    ReadinessScoreView,
 )
 
 urlpatterns = [
@@ -22,6 +23,7 @@ urlpatterns = [
     path('export/', ExportEvaluationsCSVView.as_view(), name='evaluation-export-csv'),
     path('rank/', CandidateRankingView.as_view(), name='evaluation-rank'),              # Feature 6
     # NEW AI FEATURES - Must come before <eval_id> wildcard
+    path('readiness/', ReadinessScoreView.as_view(), name='readiness-score'),
     path('behavioral-traits/', BehavioralTraitsView.as_view(), name='behavioral-traits'),
     path('check-integrity/', IntegrityCheckView.as_view(), name='check-integrity'),
     path('culture-fit/', CultureFitView.as_view(), name='culture-fit'),

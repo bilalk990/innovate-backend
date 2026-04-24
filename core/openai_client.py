@@ -1631,3 +1631,173 @@ CRITICAL: Skills array MUST have 10-12 items minimum. Experience MUST have 2-3 e
         }
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MISSING 15 AI FEATURES - CANDIDATE SIDE (4 Features)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def predict_application_status(resume_data: dict, job_data: dict, user_id: str = None) -> dict:
+    """
+    Feature 1: Predict likelihood of getting interview based on profile match.
+    Returns probability score and reasoning.
+    """
+    resume_summary = {
+        'skills': (resume_data.get('skills') or [])[:15],
+        'experience_years': resume_data.get('total_experience_years', 0),
+        'education': [e.get('degree', '') for e in (resume_data.get('education') or [])[:2]],
+    }
+    
+    job_summary = {
+        'title': job_data.get('title', ''),
+        'requirements': (job_data.get('requirements') or [])[:10],
+        'description': (job_data.get('description', ''))[:500],
+    }
+
+    prompt = f"""
+Predict the likelihood of this candidate getting an interview for this job.
+
+CANDIDATE PROFILE:
+{json.dumps(resume_summary, indent=2)}
+
+JOB POSTING:
+{json.dumps(job_summary, indent=2)}
+
+Return ONLY valid JSON:
+{{
+  "interview_probability": 0-100,
+  "confidence": "high" | "medium" | "low",
+  "match_level": "excellent" | "good" | "fair" | "weak",
+  "key_strengths": ["strength1", "strength2"],
+  "key_gaps": ["gap1", "gap2"],
+  "recommendation": "1-2 sentence advice for candidate",
+  "estimated_response_time": "1-3 days" | "3-7 days" | "7-14 days" | "unlikely"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Application status prediction failed: {e}')
+        return {
+            'interview_probability': 50,
+            'confidence': 'low',
+            'match_level': 'fair',
+            'key_strengths': ['Profile submitted'],
+            'key_gaps': ['Analysis unavailable'],
+            'recommendation': 'Keep applying to similar roles.',
+            'estimated_response_time': '7-14 days'
+        }
+
+
+def suggest_profile_improvements(current_profile: dict, target_role: str = '', user_id: str = None) -> dict:
+    """
+    Feature 2: AI suggests what to add to profile based on role and experience level.
+    """
+    profile_summary = {
+        'name': current_profile.get('name', ''),
+        'headline': current_profile.get('headline', ''),
+        'bio': current_profile.get('bio', ''),
+        'skills_count': len(current_profile.get('detailed_skills') or []),
+        'work_history_count': len(current_profile.get('work_history') or []),
+        'education_count': len(current_profile.get('education_history') or []),
+        'has_resume': current_profile.get('has_resume', False),
+        'profile_completion': current_profile.get('profile_completion', 0),
+    }
+
+    prompt = f"""
+Analyze this candidate profile and suggest improvements for {target_role or 'their career goals'}.
+
+CURRENT PROFILE:
+{json.dumps(profile_summary, indent=2)}
+
+Return ONLY valid JSON:
+{{
+  "completion_score": 0-100,
+  "priority_improvements": [
+    {{
+      "section": "headline" | "bio" | "skills" | "experience" | "education" | "resume",
+      "current_status": "missing" | "incomplete" | "weak",
+      "suggestion": "Specific actionable suggestion",
+      "impact": "high" | "medium" | "low",
+      "example": "Example of what to add"
+    }}
+  ],
+  "quick_wins": ["Quick improvement 1", "Quick improvement 2"],
+  "long_term_goals": ["Goal 1", "Goal 2"],
+  "estimated_time_to_complete": "30 minutes" | "1 hour" | "2-3 hours"
+}}
+"""
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Profile improvement suggestions failed: {e}')
+        return {
+            'completion_score': profile_summary.get('profile_completion', 50),
+            'priority_improvements': [
+                {
+                    'section': 'skills',
+                    'current_status': 'incomplete',
+                    'suggestion': 'Add more technical skills relevant to your target role',
+                    'impact': 'high',
+                    'example': 'Python, JavaScript, React, Node.js'
+                }
+            ],
+            'quick_wins': ['Update your headline', 'Add a professional bio'],
+            'long_term_goals': ['Complete work history', 'Upload resume'],
+            'estimated_time_to_complete': '1 hour'
+        }
+
+
+def calculate_readiness_score(profile_data: dict, practice_history: list = None, user_id: str = None) -> dict:
+    """Feature 3: Calculate interview readiness level (0-100%)."""
+    history_summary = []
+    if practice_history:
+        for h in (practice_history or [])[:5]:
+            history_summary.append({
+                'score': h.get('overall_score', 0),
+                'recommendation': h.get('recommendation', 'MAYBE'),
+                'job_title': h.get('job_title', ''),
+            })
+    _skills = profile_data.get('skills', [])
+    _n_exp = len(profile_data.get('work_history', []))
+    _bio = str(profile_data.get('bio', ''))[:200]
+    _resume = bool(profile_data.get('resume_uploaded', False))
+    _hist = json.dumps(history_summary) if history_summary else 'None yet.'
+    prompt = (
+        'Analyze this candidate interview readiness.\n\n'
+        'Profile:\n'
+        f'- Skills: {_skills}\n'
+        f'- Experience positions: {_n_exp}\n'
+        f'- Bio: {_bio}\n'
+        f'- Has Resume: {_resume}\n\n'
+        f'Past Interviews: {_hist}\n\n'
+        'Return JSON ONLY:\n'
+        '{\n'
+        '  "readiness_score": 0-100,\n'
+        '  "readiness_level": "Beginner|Developing|Intermediate|Advanced|Interview-Ready",\n'
+        '  "readiness_summary": "2-3 sentence assessment",\n'
+        '  "strengths": ["s1", "s2", "s3"],\n'
+        '  "gaps": ["g1", "g2"],\n'
+        '  "recommended_actions": ["a1", "a2", "a3"],\n'
+        '  "estimated_prep_time": "e.g. 2-3 weeks",\n'
+        '  "confidence_trend": "improving|declining|stable|no data"\n'
+        '}'
+    )
+    try:
+        result = json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        return result
+    except Exception as e:
+        logger.warning(f"[GPT] Readiness score failed: {e}")
+        avg = sum(h.get("overall_score", 0) for h in history_summary) / max(len(history_summary), 1) if history_summary else 40
+        has_skills = bool(profile_data.get("skills"))
+        has_exp = bool(profile_data.get("work_history"))
+        score = min(int(avg * 0.6 + (20 if has_skills else 0) + (20 if has_exp else 0)), 100)
+        return {
+            "readiness_score": score,
+            "readiness_level": "Intermediate" if score >= 60 else "Developing" if score >= 40 else "Beginner",
+            "readiness_summary": f"Based on {len(history_summary)} interview(s), readiness is {score}/100.",
+            "strengths": ["Profile data available"] if has_skills else ["Getting started"],
+            "gaps": ["Complete your profile"] if not has_skills else ["Practice more interviews"],
+            "recommended_actions": ["Upload resume", "Take a practice interview", "Complete profile"],
+            "estimated_prep_time": "2-3 weeks",
+            "confidence_trend": "no data" if not history_summary else "stable",
+        }

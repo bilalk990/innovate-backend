@@ -16,7 +16,7 @@ from interviews.models import Interview
 from resumes.models import Resume
 from notifications.models import Notification
 from accounts.models import User
-from core.openai_client import generate_offer_letter, rank_candidates_for_job, generate_interview_debrief, predict_hire_probability, generate_followup_email
+from core.openai_client import generate_offer_letter, rank_candidates_for_job, generate_interview_debrief, predict_hire_probability, generate_followup_email, calculate_readiness_score
 from core.email_service import send_evaluation_ready_email
 from core.audit_logger import log_evaluation_triggered
 from core.pdf_generator import generate_evaluation_pdf
@@ -789,3 +789,45 @@ class PredictHireView(APIView):
         except Exception as e:
             logger.error(f'[PredictHire] Failed: {e}')
             return Response({'error': f'Prediction failed: {str(e)}'}, status=500)
+
+
+class ReadinessScoreView(APIView):
+    """GET /api/evaluations/readiness/ — AI-powered interview readiness score for candidate."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        try:
+            # Build profile_data from user model
+            profile_data = {
+                'skills': getattr(user, 'detailed_skills', []) or [],
+                'work_history': getattr(user, 'work_history', []) or [],
+                'bio': getattr(user, 'bio', '') or '',
+                'education': getattr(user, 'education', '') or '',
+                'resume_uploaded': False,
+            }
+            # Check if resume exists
+            try:
+                from resumes.models import Resume
+                profile_data['resume_uploaded'] = Resume.objects.filter(candidate_id=str(user.id)).count() > 0
+            except Exception:
+                pass
+
+            # Fetch last 5 evaluations as practice history
+            practice_history = []
+            try:
+                evals = Evaluation.objects.filter(candidate_id=str(user.id)).order_by('-created_at')[:5]
+                for ev in evals:
+                    practice_history.append({
+                        'overall_score': getattr(ev, 'overall_score', 0),
+                        'recommendation': getattr(ev, 'recommendation', 'MAYBE'),
+                        'job_title': getattr(ev, 'job_title', ''),
+                    })
+            except Exception:
+                pass
+
+            result = calculate_readiness_score(profile_data, practice_history, user_id=str(user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[ReadinessScore] Failed: {e}')
+            return Response({'error': f'Readiness score failed: {str(e)}'}, status=500)
