@@ -3,7 +3,7 @@ from accounts.views import (
     RegisterView, LoginView, ProfileView,
     ChangePasswordView, UsersListView, UserDetailView,
     GoogleLoginView, AuditLogListView, BulkUserImportView,
-    SystemSettingsView
+    SystemSettingsView, ProfileImprovementsView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -40,4 +40,7 @@ urlpatterns = [
 
     # System Settings
     path('system-settings/', SystemSettingsView.as_view(), name='system-settings'),
+
+    # AI Profile Improvement Suggestions
+    path('profile-suggestions/', ProfileImprovementsView.as_view(), name='profile-suggestions'),
 ]

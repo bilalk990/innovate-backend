@@ -477,3 +477,60 @@ class SystemSettingsView(APIView):
         config.updated_at = datetime.utcnow()
         config.save()
         return Response(config.to_dict())
+
+
+class ProfileImprovementsView(APIView):
+    """
+    GET /api/auth/profile-suggestions/
+    AI-powered suggestions to improve candidate profile for better job matching.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        try:
+            from core.openai_client import suggest_profile_improvements
+        except ImportError:
+            return Response({'error': 'AI service unavailable.'}, status=503)
+
+        # Build profile_data
+        profile_data = {
+            'skills': getattr(user, 'detailed_skills', []) or [],
+            'work_history': getattr(user, 'work_history', []) or [],
+            'bio': getattr(user, 'bio', '') or '',
+            'headline': getattr(user, 'headline', '') or '',
+            'education': getattr(user, 'education', '') or '',
+            'resume_uploaded': False,
+        }
+
+        # Check if resume exists
+        try:
+            from resumes.models import Resume
+            profile_data['resume_uploaded'] = Resume.objects.filter(candidate_id=str(user.id)).count() > 0
+        except Exception:
+            pass
+
+        # Fetch evaluation history for context
+        evaluation_history = []
+        try:
+            from evaluations.models import Evaluation
+            evals = Evaluation.objects.filter(candidate_id=str(user.id)).order_by('-created_at')[:5]
+            for ev in evals:
+                evaluation_history.append({
+                    'overall_score': getattr(ev, 'overall_score', 0),
+                    'strengths': getattr(ev, 'strengths', []),
+                    'weaknesses': getattr(ev, 'weaknesses', []),
+                })
+        except Exception:
+            pass
+
+        try:
+            result = suggest_profile_improvements(
+                profile_data=profile_data,
+                evaluation_history=evaluation_history,
+                user_id=str(user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[ProfileImprovements] Failed: {e}')
+            return Response({'error': f'Suggestion failed: {str(e)}'}, status=500)

@@ -10,7 +10,7 @@ from interviews.models import Interview
 from evaluations.models import Evaluation
 from notifications.models import Notification
 from core.email_service import send_recruiter_notification_email
-from core.openai_client import analyze_resume_jd_gap
+from core.openai_client import analyze_resume_jd_gap, predict_application_status
 from django.conf import settings
 
 logger = logging.getLogger('innovaite')
@@ -451,3 +451,55 @@ class AdvancedGapAnalysisView(APIView):
         except Exception as e:
             logger.error(f'[AdvancedGapAnalysis] Failed: {e}')
             return Response({'error': f'Gap analysis failed: {str(e)}'}, status=500)
+
+
+class PredictApplicationStatusView(APIView):
+    """
+    POST /api/jobs/<job_id>/predict-status/
+    Predict if the candidate's application will be shortlisted for this job.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, job_id):
+        user = request.user
+        if getattr(user, 'role', '') != 'candidate':
+            return Response({'error': 'Only candidates can use this feature.'}, status=403)
+
+        try:
+            job = Job.objects.get(id=job_id)
+        except (Job.DoesNotExist, Exception):
+            return Response({'error': 'Job not found.'}, status=404)
+
+        # Get candidate's active resume
+        resume_data = {}
+        try:
+            resumes = Resume.objects.filter(candidate_id=str(user.id))
+            active_resume = next((r for r in resumes if getattr(r, 'is_active', False)), None) or (resumes[0] if resumes else None)
+            if active_resume and getattr(active_resume, 'parsed_data', None):
+                resume_data = active_resume.parsed_data
+        except Exception:
+            pass
+
+        # Fallback to user profile skills
+        if not resume_data:
+            resume_data = {
+                'skills': getattr(user, 'detailed_skills', []) or [],
+                'experience': getattr(user, 'work_history', []) or [],
+                'headline': getattr(user, 'headline', '') or '',
+                'total_experience_years': 0,
+            }
+
+        try:
+            result = predict_application_status(
+                resume_data=resume_data,
+                job_title=getattr(job, 'title', 'Unknown Role'),
+                job_description=getattr(job, 'description', '') or '',
+                requirements=getattr(job, 'requirements', []) or [],
+                user_id=str(user.id),
+            )
+            result['job_title'] = getattr(job, 'title', '')
+            result['job_id'] = str(job.id)
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PredictApplicationStatus] Failed: {e}')
+            return Response({'error': f'Prediction failed: {str(e)}'}, status=500)

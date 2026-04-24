@@ -582,6 +582,132 @@ Return JSON:
 
 
 
+def predict_application_status(
+    resume_data: dict,
+    job_title: str,
+    job_description: str,
+    requirements: list = None,
+    user_id: str = None,
+) -> dict:
+    """Predict likelihood of a candidate's job application being successful."""
+    resume_summary = {
+        'skills': resume_data.get('skills', []),
+        'experience': resume_data.get('experience', []),
+        'total_years': resume_data.get('total_experience_years', 0),
+        'education': resume_data.get('education', []),
+        'headline': resume_data.get('headline', ''),
+    }
+    reqs = requirements or []
+    prompt = (
+        'You are a senior HR analyst. Predict the job application success likelihood.\n\n'
+        f'Job Title: {job_title}\n'
+        f'Job Description: {job_description[:1500]}\n'
+        f'Requirements: {json.dumps(reqs[:10])}\n'
+        f'Candidate Resume Summary: {json.dumps(resume_summary)}\n\n'
+        'Return JSON ONLY:\n'
+        '{\n'
+        '  "success_probability": 0-100,\n'
+        '  "status_label": "Strong Match|Good Fit|Possible Fit|Long Shot",\n'
+        '  "shortlist_likelihood": "High|Medium|Low",\n'
+        '  "key_strengths": ["strength1", "strength2"],\n'
+        '  "critical_gaps": ["gap1", "gap2"],\n'
+        '  "recommendation": "1-2 sentence actionable advice for this application",\n'
+        '  "improvement_tips": ["tip1", "tip2", "tip3"]\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] predict_application_status failed: {e}')
+        skills = resume_data.get('skills', [])
+        reqs_lower = [r.lower() for r in reqs]
+        matched = [s for s in skills if any(r in s.lower() for r in reqs_lower)] if reqs_lower else skills[:3]
+        prob = min(85, max(20, len(matched) * 15 + 20))
+        label = 'Strong Match' if prob >= 75 else 'Good Fit' if prob >= 55 else 'Possible Fit' if prob >= 35 else 'Long Shot'
+        return {
+            'success_probability': prob,
+            'status_label': label,
+            'shortlist_likelihood': 'High' if prob >= 70 else 'Medium' if prob >= 45 else 'Low',
+            'key_strengths': matched[:2] or ['Relevant background'],
+            'critical_gaps': [r for r in reqs[:3] if r.lower() not in [s.lower() for s in skills]],
+            'recommendation': f'Your profile shows a {label.lower()} for this role. Tailor your resume to highlight matching skills.',
+            'improvement_tips': ['Tailor resume to job description', 'Highlight relevant projects', 'Add missing skills to profile'],
+        }
+
+
+def suggest_profile_improvements(
+    profile_data: dict,
+    evaluation_history: list = None,
+    user_id: str = None,
+) -> dict:
+    """Suggest AI-powered improvements to a candidate's profile to boost success."""
+    history_summary = []
+    if evaluation_history:
+        for ev in (evaluation_history or [])[:5]:
+            history_summary.append({
+                'score': ev.get('overall_score', 0),
+                'strengths': ev.get('strengths', [])[:2],
+                'weaknesses': ev.get('weaknesses', [])[:2],
+            })
+
+    has_resume = bool(profile_data.get('resume_uploaded'))
+    skills_count = len(profile_data.get('skills', []))
+    has_bio = bool(profile_data.get('bio'))
+    has_exp = bool(profile_data.get('work_history'))
+
+    prompt = (
+        'You are a career coach. Analyze this candidate profile and suggest specific improvements.\n\n'
+        'Profile:\n'
+        f'- Skills count: {skills_count}\n'
+        f'- Has Bio: {has_bio}\n'
+        f'- Has Work History: {has_exp}\n'
+        f'- Has Resume: {has_resume}\n'
+        f'- Headline: {str(profile_data.get("headline", ""))[:100]}\n\n'
+        f'Interview History (last {len(history_summary)} evals):\n'
+        f'{json.dumps(history_summary) if history_summary else "No interviews yet."}\n\n'
+        'Return JSON ONLY:\n'
+        '{\n'
+        '  "profile_strength_score": 0-100,\n'
+        '  "profile_strength_label": "Weak|Basic|Good|Strong|Excellent",\n'
+        '  "priority_improvements": [\n'
+        '    {"title": "improvement title", "description": "what to do", "impact": "High|Medium|Low"}\n'
+        '  ],\n'
+        '  "missing_sections": ["section1", "section2"],\n'
+        '  "quick_wins": ["quick action 1", "quick action 2"],\n'
+        '  "estimated_improvement": "e.g. +25% interview chances"\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] suggest_profile_improvements failed: {e}')
+        score = (
+            (20 if has_resume else 0) +
+            (20 if has_bio else 0) +
+            (20 if has_exp else 0) +
+            min(30, skills_count * 3) +
+            10
+        )
+        label = 'Excellent' if score >= 85 else 'Strong' if score >= 70 else 'Good' if score >= 50 else 'Basic' if score >= 30 else 'Weak'
+        improvements = []
+        if not has_resume:
+            improvements.append({'title': 'Upload Resume', 'description': 'Upload your resume to unlock AI matching and gap analysis.', 'impact': 'High'})
+        if not has_bio:
+            improvements.append({'title': 'Write a Professional Bio', 'description': 'Add a compelling 3-5 sentence bio highlighting your expertise.', 'impact': 'High'})
+        if not has_exp:
+            improvements.append({'title': 'Add Work History', 'description': 'Add your work experience to improve match scores by up to 40%.', 'impact': 'High'})
+        if skills_count < 5:
+            improvements.append({'title': 'Add More Skills', 'description': f'You have {skills_count} skills. Add at least 8-10 to improve matching.', 'impact': 'Medium'})
+        return {
+            'profile_strength_score': score,
+            'profile_strength_label': label,
+            'priority_improvements': improvements[:4],
+            'missing_sections': [s for s, ok in [('Resume', has_resume), ('Bio', has_bio), ('Work History', has_exp)] if not ok],
+            'quick_wins': ['Add a professional headline', 'Upload a resume', 'Add 5 key skills'],
+            'estimated_improvement': f'+{max(10, 90 - score)}% with suggested improvements',
+        }
+
+
 def generate_question_bank_suggestions(
     job_title: str,
     category: str = 'general',

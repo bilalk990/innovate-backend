@@ -1,9 +1,10 @@
 from django.urls import path
 from .views import (
-    JobListView, JobDetailView, ApplicationView, ApplicationDetailView, 
+    JobListView, JobDetailView, ApplicationView, ApplicationDetailView,
     JobApplicantsView, GapAnalysisView,
     # NEW AI FEATURES
-    JobFitmentAnalysisView, AdvancedGapAnalysisView
+    JobFitmentAnalysisView, AdvancedGapAnalysisView,
+    PredictApplicationStatusView,
 )
 
 urlpatterns = [
@@ -15,6 +16,7 @@ urlpatterns = [
     path('advanced-gap-analysis/', AdvancedGapAnalysisView.as_view(), name='advanced-gap-analysis'),
     # Feature 4 — Gap Analysis must come before <job_id>/ wildcard
     path('<str:job_id>/gap-analysis/', GapAnalysisView.as_view(), name='job-gap-analysis'),
+    path('<str:job_id>/predict-status/', PredictApplicationStatusView.as_view(), name='predict-application-status'),
     path('<str:job_id>/applicants/', JobApplicantsView.as_view(), name='job-applicants'),
     path('<str:job_id>/', JobDetailView.as_view(), name='job-detail'),
 ]
