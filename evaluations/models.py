@@ -6,6 +6,41 @@ import mongoengine as me
 from datetime import datetime
 
 
+class MockInterviewSession(me.Document):
+    """Stores a single AI mock interview session for a candidate."""
+    user_id = me.StringField(required=True)
+    role = me.StringField(required=True)        # e.g. "Software Engineer"
+    level = me.StringField(default='mid')       # junior | mid | senior
+    history = me.ListField(me.DictField())      # [{question, question_type, tip, answer, score, grade, feedback, ...}]
+    current_question = me.IntField(default=0)
+    total_questions = me.IntField(default=5)
+    status = me.StringField(default='active', choices=['active', 'completed', 'abandoned'])
+    final_report = me.DictField(default=None)
+    created_at = me.DateTimeField(default=datetime.utcnow)
+    completed_at = me.DateTimeField()
+
+    meta = {
+        'collection': 'mock_interview_sessions',
+        'indexes': ['user_id', 'status', '-created_at'],
+        'ordering': ['-created_at'],
+    }
+
+    def to_dict(self):
+        return {
+            'session_id': str(self.id),
+            'user_id': self.user_id,
+            'role': self.role,
+            'level': self.level,
+            'history': self.history or [],
+            'current_question': self.current_question,
+            'total_questions': self.total_questions,
+            'status': self.status,
+            'final_report': self.final_report,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
 class CriterionResult(me.EmbeddedDocument):
     """Score for a single evaluation criterion with XAI explanation"""
     criterion = me.StringField(required=True)   # clarity, consistency, alignment, etc.

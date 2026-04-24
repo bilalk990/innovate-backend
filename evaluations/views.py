@@ -10,13 +10,18 @@ from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from evaluations.models import Evaluation, CriterionResult
+from evaluations.models import Evaluation, CriterionResult, MockInterviewSession
 from evaluations.engine import run_xai_evaluation
 from interviews.models import Interview
 from resumes.models import Resume
 from notifications.models import Notification
 from accounts.models import User
-from core.openai_client import generate_offer_letter, rank_candidates_for_job, generate_interview_debrief, predict_hire_probability, generate_followup_email, calculate_readiness_score
+from core.openai_client import (
+    generate_offer_letter, rank_candidates_for_job, generate_interview_debrief,
+    predict_hire_probability, generate_followup_email, calculate_readiness_score,
+    generate_mock_interview_question, evaluate_mock_answer, generate_mock_interview_report,
+    analyze_anxiety_signals,
+)
 from core.email_service import send_evaluation_ready_email
 from core.audit_logger import log_evaluation_triggered
 from core.pdf_generator import generate_evaluation_pdf
@@ -798,7 +803,6 @@ class ReadinessScoreView(APIView):
     def get(self, request):
         user = request.user
         try:
-            # Build profile_data from user model
             profile_data = {
                 'skills': getattr(user, 'detailed_skills', []) or [],
                 'work_history': getattr(user, 'work_history', []) or [],
@@ -806,14 +810,12 @@ class ReadinessScoreView(APIView):
                 'education': getattr(user, 'education', '') or '',
                 'resume_uploaded': False,
             }
-            # Check if resume exists
             try:
                 from resumes.models import Resume
                 profile_data['resume_uploaded'] = Resume.objects.filter(candidate_id=str(user.id)).count() > 0
             except Exception:
                 pass
 
-            # Fetch last 5 evaluations as practice history
             practice_history = []
             try:
                 evals = Evaluation.objects.filter(candidate_id=str(user.id)).order_by('-created_at')[:5]
@@ -831,3 +833,250 @@ class ReadinessScoreView(APIView):
         except Exception as e:
             logger.error(f'[ReadinessScore] Failed: {e}')
             return Response({'error': f'Readiness score failed: {str(e)}'}, status=500)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CATEGORY 1: MOCK INTERVIEW + ANXIETY DETECTION VIEWS
+# ═════════════════════════════════════════════════════════════════════════════
+
+class MockInterviewStartView(APIView):
+    """POST /api/evaluations/mock/start/ — Start a new AI mock interview session."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != 'candidate':
+            return Response({'error': 'Only candidates can use mock interviews.'}, status=403)
+
+        role = request.data.get('role', '').strip()
+        level = request.data.get('level', 'mid').strip()
+
+        if not role:
+            return Response({'error': 'Job role is required.'}, status=400)
+        if level not in ['junior', 'mid', 'senior']:
+            level = 'mid'
+
+        # Abandon any existing active session for this user
+        try:
+            MockInterviewSession.objects(
+                user_id=str(request.user.id), status='active'
+            ).update(status='abandoned')
+        except Exception:
+            pass
+
+        # Generate first question
+        try:
+            q_data = generate_mock_interview_question(
+                role=role, level=level, history=[], question_number=1,
+                user_id=str(request.user.id)
+            )
+        except Exception as e:
+            logger.error(f'[MockInterview] Question generation failed: {e}')
+            return Response({'error': 'Failed to generate interview question.'}, status=500)
+
+        # Create session
+        session = MockInterviewSession(
+            user_id=str(request.user.id),
+            role=role,
+            level=level,
+            history=[],
+            current_question=1,
+            total_questions=5,
+            status='active',
+        )
+        session.save()
+
+        return Response({
+            'session_id': str(session.id),
+            'role': role,
+            'level': level,
+            'total_questions': 5,
+            'current_question': 1,
+            'question_data': q_data,
+        })
+
+
+class MockInterviewAnswerView(APIView):
+    """POST /api/evaluations/mock/answer/ — Submit answer, get feedback + next question or final report."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != 'candidate':
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        session_id = request.data.get('session_id', '').strip()
+        answer = request.data.get('answer', '').strip()
+
+        if not session_id:
+            return Response({'error': 'session_id is required.'}, status=400)
+        if not answer or len(answer) < 5:
+            return Response({'error': 'Answer must be at least 5 characters.'}, status=400)
+
+        # Load session
+        try:
+            session = MockInterviewSession.objects.get(id=session_id)
+        except (mongoengine.DoesNotExist, mongoengine.ValidationError):
+            return Response({'error': 'Session not found.'}, status=404)
+
+        if session.user_id != str(request.user.id):
+            return Response({'error': 'Forbidden.'}, status=403)
+        if session.status != 'active':
+            return Response({'error': 'Session is no longer active.'}, status=400)
+
+        # Get current question (last item pending answer in history, or from start)
+        # The question was stored when generating, answer now
+        history = session.history or []
+        current_q_num = session.current_question
+
+        # The last question data (if history has an entry without answer)
+        if history and 'answer' not in history[-1]:
+            current_q_data = history[-1]
+        else:
+            # Shouldn't happen, but fallback
+            return Response({'error': 'No pending question found.'}, status=400)
+
+        # Evaluate the answer
+        try:
+            eval_result = evaluate_mock_answer(
+                question=current_q_data.get('question', ''),
+                answer=answer,
+                role=session.role,
+                question_type=current_q_data.get('question_type', 'behavioral'),
+                user_id=str(request.user.id)
+            )
+        except Exception as e:
+            logger.error(f'[MockInterview] Answer evaluation failed: {e}')
+            eval_result = {'score': 6, 'grade': 'Average', 'feedback': 'Answer recorded.', 'strengths': [], 'improvements': [], 'better_answer_hint': '', 'keywords_used': [], 'keywords_missed': []}
+
+        # Update the last history entry with answer + feedback
+        current_q_data['answer'] = answer
+        current_q_data['score'] = eval_result.get('score', 6)
+        current_q_data['grade'] = eval_result.get('grade', 'Average')
+        current_q_data['feedback'] = eval_result.get('feedback', '')
+        current_q_data['strengths'] = eval_result.get('strengths', [])
+        current_q_data['improvements'] = eval_result.get('improvements', [])
+        current_q_data['better_answer_hint'] = eval_result.get('better_answer_hint', '')
+        current_q_data['keywords_used'] = eval_result.get('keywords_used', [])
+        current_q_data['keywords_missed'] = eval_result.get('keywords_missed', [])
+        history[-1] = current_q_data
+
+        # Check if this was the last question
+        if current_q_num >= session.total_questions:
+            # Generate final report
+            try:
+                report = generate_mock_interview_report(
+                    role=session.role, level=session.level, history=history,
+                    user_id=str(request.user.id)
+                )
+            except Exception as e:
+                logger.error(f'[MockInterview] Report generation failed: {e}')
+                report = {'overall_score': 70, 'performance_grade': 'Average', 'interview_summary': 'Interview completed.', 'top_strengths': [], 'critical_improvements': [], 'recommended_resources': [], 'readiness_for_real_interview': 'Almost Ready', 'next_steps': [], 'motivational_note': 'Keep practicing!'}
+
+            session.history = history
+            session.status = 'completed'
+            session.final_report = report
+            session.completed_at = datetime.utcnow()
+            session.save()
+
+            return Response({
+                'status': 'completed',
+                'feedback': eval_result,
+                'final_report': report,
+                'session': session.to_dict(),
+            })
+        else:
+            # Generate next question
+            next_q_num = current_q_num + 1
+            try:
+                next_q = generate_mock_interview_question(
+                    role=session.role, level=session.level,
+                    history=[{k: v for k, v in h.items() if k in ('question', 'answer')} for h in history],
+                    question_number=next_q_num,
+                    user_id=str(request.user.id)
+                )
+            except Exception as e:
+                logger.error(f'[MockInterview] Next question failed: {e}')
+                next_q = {'question': 'Tell me about a recent professional achievement.', 'question_type': 'behavioral', 'what_to_assess': 'Achievement orientation', 'tip_for_candidate': 'Be specific and quantify results.'}
+
+            # Add next question to history (without answer yet)
+            history.append({
+                'question': next_q.get('question', ''),
+                'question_type': next_q.get('question_type', 'behavioral'),
+                'what_to_assess': next_q.get('what_to_assess', ''),
+                'tip_for_candidate': next_q.get('tip_for_candidate', ''),
+            })
+
+            session.history = history
+            session.current_question = next_q_num
+            session.save()
+
+            return Response({
+                'status': 'active',
+                'feedback': eval_result,
+                'next_question': next_q_num,
+                'total_questions': session.total_questions,
+                'question_data': next_q,
+            })
+
+
+class MockInterviewSessionView(APIView):
+    """GET /api/evaluations/mock/<session_id>/ — Get a mock interview session."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        try:
+            session = MockInterviewSession.objects.get(id=session_id)
+        except (mongoengine.DoesNotExist, mongoengine.ValidationError):
+            return Response({'error': 'Session not found.'}, status=404)
+
+        if session.user_id != str(request.user.id) and request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Forbidden.'}, status=403)
+
+        return Response(session.to_dict())
+
+
+class MockInterviewListView(APIView):
+    """GET /api/evaluations/mock/ — List candidate's mock interview sessions."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            sessions = MockInterviewSession.objects(
+                user_id=str(request.user.id)
+            ).order_by('-created_at')[:10]
+            return Response([s.to_dict() for s in sessions])
+        except Exception as e:
+            logger.error(f'[MockInterview] List failed: {e}')
+            return Response({'error': str(e)}, status=500)
+
+
+class AnxietyDetectionView(APIView):
+    """POST /api/evaluations/anxiety-check/ — Analyze speech features for anxiety during interview."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Accept speech feature data from client-side audio analysis
+        speech_features = {
+            'speech_rate_wpm': request.data.get('speech_rate_wpm', 120),
+            'pause_frequency': request.data.get('pause_frequency', 0),
+            'long_pauses': request.data.get('long_pauses', 0),
+            'volume_variance': request.data.get('volume_variance', 0.2),
+            'filler_word_count': request.data.get('filler_word_count', 0),
+            'speaking_duration_seconds': request.data.get('speaking_duration_seconds', 30),
+            'silence_ratio': request.data.get('silence_ratio', 0.1),
+            'pitch_variance': request.data.get('pitch_variance', 0),
+        }
+
+        try:
+            result = analyze_anxiety_signals(speech_features, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[AnxietyDetection] Failed: {e}')
+            return Response({
+                'anxiety_score': 30,
+                'anxiety_level': 'Mild',
+                'detected_signals': ['Analysis unavailable'],
+                'calm_message': 'You are doing great. Stay focused and breathe.',
+                'breathing_exercise': 'Inhale for 4 counts, hold for 4, exhale for 6.',
+                'quick_tip': 'Take a brief pause before answering each question.',
+                'positive_affirmation': 'You are prepared. Trust yourself.'
+            })

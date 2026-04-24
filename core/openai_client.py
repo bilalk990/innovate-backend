@@ -1927,3 +1927,293 @@ def calculate_readiness_score(profile_data: dict, practice_history: list = None,
             "estimated_prep_time": "2-3 weeks",
             "confidence_trend": "no data" if not history_summary else "stable",
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CATEGORY 1: CANDIDATE AI FEATURES — Mock Interview, Salary, Anxiety, Career
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def generate_mock_interview_question(role: str, level: str, history: list = None, question_number: int = 1, user_id: str = None) -> dict:
+    """Generate the next mock interview question for a given role and level."""
+    history_text = ''
+    if history:
+        for i, item in enumerate(history[-3:], 1):
+            history_text += 'Q' + str(i) + ': ' + str(item.get('question', '')) + '\n'
+            history_text += 'A' + str(i) + ': ' + str(item.get('answer', ''))[:200] + '\n\n'
+
+    prompt = (
+        'You are an expert interviewer conducting a ' + level + '-level ' + role + ' interview.\n'
+        'This is question ' + str(question_number) + ' of 5.\n'
+        + ('Previous Q&A:\n' + history_text + '\n' if history_text else '')
+        + 'Generate the next interview question. Make it progressive, realistic, and appropriate for the level.\n'
+        'Vary question types across behavioral, technical, situational, and motivational.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "question": "The interview question text",\n'
+        '  "question_type": "behavioral|technical|situational|motivational",\n'
+        '  "what_to_assess": "What this question evaluates in the candidate",\n'
+        '  "tip_for_candidate": "Brief tip on how to best approach answering this"\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Mock question generation failed: {e}')
+        fallback_questions = [
+            'Tell me about yourself and what brings you to this role.',
+            'Describe your greatest professional achievement.',
+            'Tell me about a challenge you faced and how you overcame it.',
+            'Where do you see yourself professionally in 3-5 years?',
+            'Why are you the best candidate for this position?',
+        ]
+        return {
+            'question': fallback_questions[min(question_number - 1, 4)],
+            'question_type': 'behavioral',
+            'what_to_assess': 'Communication clarity and self-awareness',
+            'tip_for_candidate': 'Be specific, use real examples, and keep your answer focused.'
+        }
+
+
+def evaluate_mock_answer(question: str, answer: str, role: str, question_type: str = 'behavioral', user_id: str = None) -> dict:
+    """Evaluate a candidate answer to a mock interview question and return detailed feedback."""
+    prompt = (
+        'You are evaluating a ' + role + ' interview answer for a ' + question_type + ' question.\n\n'
+        'QUESTION: ' + question + '\n\n'
+        'CANDIDATE ANSWER: ' + str(answer)[:1000] + '\n\n'
+        'Score and give actionable feedback. Be honest but constructive.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "score": 1-10,\n'
+        '  "grade": "Excellent|Good|Average|Below Average|Poor",\n'
+        '  "feedback": "Detailed 2-3 sentence personalized feedback",\n'
+        '  "strengths": ["strength1", "strength2"],\n'
+        '  "improvements": ["specific improvement1", "specific improvement2"],\n'
+        '  "better_answer_hint": "One-line hint for a stronger answer",\n'
+        '  "keywords_used": ["keyword found in answer"],\n'
+        '  "keywords_missed": ["important keyword missing"]\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Mock answer evaluation failed: {e}')
+        return {
+            'score': 6,
+            'grade': 'Average',
+            'feedback': 'Your answer addressed the question but could be more specific. Try using concrete examples.',
+            'strengths': ['Attempted the question', 'Relevant topic coverage'],
+            'improvements': ['Add specific examples with measurable outcomes', 'Use STAR format: Situation, Task, Action, Result'],
+            'better_answer_hint': 'Ground your answer in a real situation from your experience.',
+            'keywords_used': [],
+            'keywords_missed': ['specific example', 'measurable result']
+        }
+
+
+def generate_mock_interview_report(role: str, level: str, history: list, user_id: str = None) -> dict:
+    """Generate a comprehensive final performance report after completing a mock interview."""
+    qa_summary = []
+    total_score = 0
+    for i, item in enumerate(history, 1):
+        score = item.get('score', 5)
+        total_score += score
+        qa_summary.append({
+            'q': i,
+            'question_type': item.get('question_type', 'behavioral'),
+            'score': score,
+            'grade': item.get('grade', 'Average')
+        })
+    avg_score = total_score / max(len(history), 1)
+
+    prompt = (
+        'Generate a comprehensive final mock interview report.\n\n'
+        'Role: ' + role + '\n'
+        'Level: ' + level + '\n'
+        'Questions Attempted: ' + str(len(history)) + '\n'
+        'Average Score: ' + str(round(avg_score, 1)) + '/10\n'
+        'Per-question breakdown:\n' + json.dumps(qa_summary, indent=2) + '\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "overall_score": 0-100,\n'
+        '  "performance_grade": "Excellent|Good|Average|Needs Improvement|Poor",\n'
+        '  "interview_summary": "3-4 sentence holistic assessment of performance",\n'
+        '  "top_strengths": ["strength1", "strength2", "strength3"],\n'
+        '  "critical_improvements": ["area1", "area2", "area3"],\n'
+        '  "recommended_resources": ["resource or action 1", "resource or action 2"],\n'
+        '  "readiness_for_real_interview": "Ready|Almost Ready|Needs More Practice|Not Ready",\n'
+        '  "next_steps": ["actionable step1", "step2", "step3"],\n'
+        '  "motivational_note": "Short encouraging closing message for the candidate"\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Mock interview report generation failed: {e}')
+        overall = min(int(avg_score * 10), 100)
+        return {
+            'overall_score': overall,
+            'performance_grade': 'Good' if overall >= 70 else 'Average' if overall >= 50 else 'Needs Improvement',
+            'interview_summary': f'You completed a {role} mock interview scoring {overall}/100. Keep practicing to build confidence.',
+            'top_strengths': ['Completed the full interview', 'Demonstrated engagement', 'Showed relevant knowledge'],
+            'critical_improvements': ['Use more specific examples', 'Practice concise answers', 'Research the role deeper'],
+            'recommended_resources': ['Practice STAR method daily', 'Record and review your answers', 'Study role-specific topics'],
+            'readiness_for_real_interview': 'Almost Ready' if overall >= 65 else 'Needs More Practice',
+            'next_steps': ['Practice one mock interview daily', 'Record yourself and review', 'Research company-specific questions'],
+            'motivational_note': 'Every practice session makes you stronger. You are on the right path!'
+        }
+
+
+def suggest_salary_negotiation(job_title: str, skills: list, experience_years: int, location: str, current_offer: float = None, company_size: str = 'medium', user_id: str = None) -> dict:
+    """Provide AI-powered salary negotiation strategy with market data and negotiation scripts."""
+    offer_text = ('$' + str(int(current_offer))) if current_offer else 'No offer yet'
+    skills_text = ', '.join(skills[:10]) if skills else 'Not specified'
+
+    prompt = (
+        'You are a salary negotiation expert with real market knowledge.\n\n'
+        'Profile:\n'
+        '- Job Title: ' + job_title + '\n'
+        '- Skills: ' + skills_text + '\n'
+        '- Experience: ' + str(experience_years) + ' years\n'
+        '- Location: ' + location + '\n'
+        '- Company Size: ' + company_size + '\n'
+        '- Current Offer: ' + offer_text + '\n\n'
+        'Provide realistic market salary data and negotiation strategy.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "market_min": annual_salary_number,\n'
+        '  "market_mid": annual_salary_number,\n'
+        '  "market_max": annual_salary_number,\n'
+        '  "recommended_ask": annual_salary_number,\n'
+        '  "currency": "USD|PKR|GBP|EUR|INR",\n'
+        '  "confidence": "high|medium|low",\n'
+        '  "market_insight": "2-sentence market context explanation",\n'
+        '  "negotiation_script": "Full word-for-word opening negotiation script",\n'
+        '  "counter_offer_responses": [\n'
+        '    {"scenario": "They say the budget is fixed", "response": "word-for-word response"},\n'
+        '    {"scenario": "They say your ask is too high", "response": "word-for-word response"},\n'
+        '    {"scenario": "They ask for your current salary", "response": "word-for-word response"}\n'
+        '  ],\n'
+        '  "benefits_to_negotiate": ["benefit1", "benefit2", "benefit3"],\n'
+        '  "timing_tips": ["tip1", "tip2"],\n'
+        '  "red_flags": ["red flag1", "red flag2"],\n'
+        '  "power_phrases": ["phrase1", "phrase2", "phrase3"]\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Salary negotiation suggestion failed: {e}')
+        return {
+            'market_min': 60000, 'market_mid': 80000, 'market_max': 100000,
+            'recommended_ask': 85000, 'currency': 'USD', 'confidence': 'low',
+            'market_insight': 'Market data is based on your role and location. Adjust based on company size and local cost of living.',
+            'negotiation_script': 'Thank you for the offer. I am very excited about this opportunity. Based on my research and experience, I was expecting a range closer to [X]. Is there flexibility in the compensation?',
+            'counter_offer_responses': [
+                {'scenario': 'They say the budget is fixed', 'response': 'I completely understand. Could we discuss other benefits like additional PTO, remote work flexibility, or a sign-on bonus?'},
+                {'scenario': 'They say your ask is too high', 'response': 'I appreciate your transparency. What is the budgeted range for this role? I want to make sure we find something that works for both of us.'},
+                {'scenario': 'They ask for your current salary', 'response': 'I prefer to focus on the market value for this role and the value I bring rather than my current compensation.'}
+            ],
+            'benefits_to_negotiate': ['Remote work flexibility', 'Additional PTO', 'Professional development budget', 'Sign-on bonus'],
+            'timing_tips': ['Always wait for a written offer before negotiating', 'Let them give a number first whenever possible'],
+            'red_flags': ['Pressure to accept immediately', 'Vague or undisclosed salary range', 'No written offer provided'],
+            'power_phrases': ['Based on my market research...', 'I am very excited about this role and...', 'I believe my experience in X justifies...']
+        }
+
+
+def analyze_anxiety_signals(speech_features: dict, user_id: str = None) -> dict:
+    """Analyze voice/speech features to detect anxiety during interviews and provide calming support."""
+    prompt = (
+        'You are a mental wellness coach for interview anxiety. Analyze these speech metrics.\n\n'
+        'Speech Analysis Data:\n' + json.dumps(speech_features, indent=2) + '\n\n'
+        'Detect anxiety indicators and provide warm, supportive coaching.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "anxiety_score": 0-100,\n'
+        '  "anxiety_level": "Calm|Mild|Moderate|High|Severe",\n'
+        '  "detected_signals": ["signal1", "signal2"],\n'
+        '  "calm_message": "Warm, encouraging message (1-2 sentences)",\n'
+        '  "breathing_exercise": "Step-by-step 4-7-8 or box breathing instruction",\n'
+        '  "quick_tip": "One immediate actionable tip to ground yourself",\n'
+        '  "positive_affirmation": "Short powerful affirmation (1 sentence)"\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Anxiety analysis failed: {e}')
+        return {
+            'anxiety_score': 30,
+            'anxiety_level': 'Mild',
+            'detected_signals': ['Slight pace variation detected'],
+            'calm_message': 'You are doing wonderfully. Take a deep breath — you are more prepared than you think.',
+            'breathing_exercise': 'Box breathing: Inhale 4 counts → Hold 4 → Exhale 4 → Hold 4. Repeat 3 times.',
+            'quick_tip': 'Pause for 2 seconds before answering. It signals thoughtfulness, not hesitation.',
+            'positive_affirmation': 'You are exactly where you need to be. You belong here.'
+        }
+
+
+def recommend_career_paths(profile_data: dict, evaluation_history: list = None, user_id: str = None) -> dict:
+    """Recommend 3 personalized career paths based on candidate profile and performance history."""
+    skills = (profile_data.get('skills') or [])[:15]
+    experience = len(profile_data.get('work_history') or [])
+    headline = profile_data.get('headline', '')
+    bio = str(profile_data.get('bio', ''))[:300]
+
+    eval_summary = []
+    if evaluation_history:
+        for ev in (evaluation_history or [])[:3]:
+            eval_summary.append({
+                'score': ev.get('overall_score', 0),
+                'job': ev.get('job_title', ''),
+                'rec': ev.get('recommendation', '')
+            })
+
+    prompt = (
+        'You are a career counselor. Recommend 3 tailored career paths for this candidate.\n\n'
+        'Skills: ' + json.dumps(skills) + '\n'
+        'Experience Positions: ' + str(experience) + '\n'
+        'Current Headline: ' + headline + '\n'
+        'Bio: ' + bio + '\n'
+        + ('Interview History: ' + json.dumps(eval_summary) + '\n' if eval_summary else '')
+        + '\nMake paths realistic, specific, and progressively ordered by difficulty.\n\n'
+        'Return ONLY valid JSON:\n'
+        '{\n'
+        '  "career_paths": [\n'
+        '    {\n'
+        '      "title": "Specific career path title",\n'
+        '      "match_score": 0-100,\n'
+        '      "why_suited": "2-sentence explanation of why this fits them",\n'
+        '      "current_skills_applicable": ["skill1", "skill2"],\n'
+        '      "skills_to_acquire": ["skill1", "skill2", "skill3"],\n'
+        '      "timeline": "3-6 months|6-12 months|1-2 years|2-3 years",\n'
+        '      "salary_range": "$X,000 - $Y,000",\n'
+        '      "growth_potential": "Very High|High|Medium|Steady",\n'
+        '      "job_titles_on_path": ["Entry Title", "Mid Title", "Senior Title"],\n'
+        '      "first_step": "Single most important immediate action to start"\n'
+        '    }\n'
+        '  ],\n'
+        '  "overall_assessment": "2-3 sentence summary of the candidate overall",\n'
+        '  "top_strength": "Their single biggest professional strength"\n'
+        '}'
+    )
+    try:
+        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+    except Exception as e:
+        logger.warning(f'[GPT] Career path recommendation failed: {e}')
+        return {
+            'career_paths': [
+                {
+                    'title': 'Software Engineer',
+                    'match_score': 75,
+                    'why_suited': 'Your technical skills and background align with software engineering. This is a high-demand field with strong growth.',
+                    'current_skills_applicable': skills[:3] if skills else ['Problem solving', 'Communication'],
+                    'skills_to_acquire': ['System Design', 'Cloud Platforms (AWS/GCP)', 'CI/CD Pipelines'],
+                    'timeline': '6-12 months',
+                    'salary_range': '$70,000 - $130,000',
+                    'growth_potential': 'Very High',
+                    'job_titles_on_path': ['Junior Software Engineer', 'Software Engineer', 'Senior Software Engineer', 'Staff Engineer'],
+                    'first_step': 'Build 2-3 portfolio projects on GitHub and apply to entry-level positions'
+                }
+            ],
+            'overall_assessment': 'You have a solid foundation to build from. Focus on deepening your core skills and building a visible portfolio.',
+            'top_strength': 'Eagerness to learn and technical aptitude'
+        }

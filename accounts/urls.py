@@ -4,6 +4,7 @@ from accounts.views import (
     ChangePasswordView, UsersListView, UserDetailView,
     GoogleLoginView, AuditLogListView, BulkUserImportView,
     SystemSettingsView, ProfileImprovementsView,
+    SalaryNegotiationView, CareerPathView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -43,4 +44,8 @@ urlpatterns = [
 
     # AI Profile Improvement Suggestions
     path('profile-suggestions/', ProfileImprovementsView.as_view(), name='profile-suggestions'),
+
+    # Category 1: New Candidate AI Features
+    path('salary-negotiation/', SalaryNegotiationView.as_view(), name='salary-negotiation'),
+    path('career-path/', CareerPathView.as_view(), name='career-path'),
 ]

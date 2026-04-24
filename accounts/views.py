@@ -534,3 +534,89 @@ class ProfileImprovementsView(APIView):
         except Exception as e:
             logger.error(f'[ProfileImprovements] Failed: {e}')
             return Response({'error': f'Suggestion failed: {str(e)}'}, status=500)
+
+
+class SalaryNegotiationView(APIView):
+    """POST /api/auth/salary-negotiation/ — AI salary negotiation strategy."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import suggest_salary_negotiation
+
+        job_title = request.data.get('job_title', '').strip()
+        if not job_title:
+            return Response({'error': 'job_title is required.'}, status=400)
+
+        user = request.user
+        skills = getattr(user, 'detailed_skills', []) or []
+        work_history = getattr(user, 'work_history', []) or []
+        experience_years = request.data.get('experience_years') or len(work_history)
+        location = request.data.get('location') or getattr(user, 'location', 'United States') or 'United States'
+        current_offer = request.data.get('current_offer')
+        company_size = request.data.get('company_size', 'medium')
+
+        # Parse numeric values safely
+        try:
+            experience_years = int(experience_years)
+        except (TypeError, ValueError):
+            experience_years = max(len(work_history), 0)
+
+        try:
+            current_offer = float(current_offer) if current_offer else None
+        except (TypeError, ValueError):
+            current_offer = None
+
+        try:
+            result = suggest_salary_negotiation(
+                job_title=job_title,
+                skills=skills,
+                experience_years=experience_years,
+                location=location,
+                current_offer=current_offer,
+                company_size=company_size,
+                user_id=str(user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[SalaryNegotiation] Failed: {e}')
+            return Response({'error': f'Salary analysis failed: {str(e)}'}, status=500)
+
+
+class CareerPathView(APIView):
+    """GET /api/auth/career-path/ — AI career path recommendations."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from core.openai_client import recommend_career_paths
+
+        user = request.user
+        profile_data = {
+            'skills': getattr(user, 'detailed_skills', []) or [],
+            'work_history': getattr(user, 'work_history', []) or [],
+            'bio': getattr(user, 'bio', '') or '',
+            'headline': getattr(user, 'headline', '') or '',
+        }
+
+        evaluation_history = []
+        try:
+            from evaluations.models import Evaluation
+            evals = Evaluation.objects.filter(candidate_id=str(user.id)).order_by('-created_at')[:5]
+            for ev in evals:
+                evaluation_history.append({
+                    'overall_score': getattr(ev, 'overall_score', 0),
+                    'job_title': '',
+                    'recommendation': getattr(ev, 'recommendation', ''),
+                })
+        except Exception:
+            pass
+
+        try:
+            result = recommend_career_paths(
+                profile_data=profile_data,
+                evaluation_history=evaluation_history,
+                user_id=str(user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[CareerPath] Failed: {e}')
+            return Response({'error': f'Career path recommendation failed: {str(e)}'}, status=500)

@@ -7,13 +7,19 @@ from evaluations.views import (
     InterviewDebriefView,
     HireProbabilityView,
     FollowUpEmailView,
-    # NEW AI FEATURES
+    # AI ANALYSIS FEATURES
     BehavioralTraitsView,
     IntegrityCheckView,
     CultureFitView,
     ExecutiveSummaryView,
     PredictHireView,
     ReadinessScoreView,
+    # CATEGORY 1: NEW CANDIDATE AI FEATURES
+    MockInterviewStartView,
+    MockInterviewAnswerView,
+    MockInterviewSessionView,
+    MockInterviewListView,
+    AnxietyDetectionView,
 )
 
 urlpatterns = [
@@ -21,13 +27,20 @@ urlpatterns = [
     path('trigger/', TriggerEvaluationView.as_view(), name='evaluation-trigger'),
     path('offer/', OfferLetterView.as_view(), name='evaluation-offer'),
     path('export/', ExportEvaluationsCSVView.as_view(), name='evaluation-export-csv'),
-    path('rank/', CandidateRankingView.as_view(), name='evaluation-rank'),              # Feature 6
-    # NEW AI FEATURES - Must come before <eval_id> wildcard
+    path('rank/', CandidateRankingView.as_view(), name='evaluation-rank'),
+    # Static paths — must come before <eval_id> wildcard
     path('readiness/', ReadinessScoreView.as_view(), name='readiness-score'),
     path('behavioral-traits/', BehavioralTraitsView.as_view(), name='behavioral-traits'),
     path('check-integrity/', IntegrityCheckView.as_view(), name='check-integrity'),
     path('culture-fit/', CultureFitView.as_view(), name='culture-fit'),
     path('executive-summary/', ExecutiveSummaryView.as_view(), name='executive-summary'),
+    path('anxiety-check/', AnxietyDetectionView.as_view(), name='anxiety-check'),
+    # Mock Interview endpoints
+    path('mock/', MockInterviewListView.as_view(), name='mock-interview-list'),
+    path('mock/start/', MockInterviewStartView.as_view(), name='mock-interview-start'),
+    path('mock/answer/', MockInterviewAnswerView.as_view(), name='mock-interview-answer'),
+    path('mock/<str:session_id>/', MockInterviewSessionView.as_view(), name='mock-interview-session'),
+    # Dynamic eval_id paths
     path('<str:eval_id>/', EvaluationDetailView.as_view(), name='evaluation-detail'),
     path('<str:eval_id>/export-pdf/', ExportEvaluationPDFView.as_view(), name='evaluation-export-pdf'),
     path('<str:eval_id>/share/', EvaluationShareView.as_view(), name='evaluation-share'),
