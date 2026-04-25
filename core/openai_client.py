@@ -82,7 +82,7 @@ def _increment_and_check_quota():
     return None
 
 
-def _call(prompt: str, user_id: str = None, response_format: str = "text") -> str:
+def _call(prompt: str, user_id: str = None, response_format: str = "text", max_tokens: int = 2000) -> str:
     """
     Make an OpenAI API call with rate limiting and proper error handling.
     """
@@ -110,7 +110,7 @@ def _call(prompt: str, user_id: str = None, response_format: str = "text") -> st
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=2000
+            max_tokens=max_tokens
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -136,6 +136,10 @@ def _call(prompt: str, user_id: str = None, response_format: str = "text") -> st
         # Generic failure
         logger.error(f'[AI] OpenAI API call failed: {e}')
         raise Exception(f'AI_ERROR: {str(e)}')
+
+
+# Alias so both naming conventions work
+_call_openai = _call
 
 
 def _strip_json(text: str) -> str:
@@ -2945,7 +2949,7 @@ Return a JSON object with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=1400, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'ats_score' in data:
             return data
     except Exception as e:
@@ -2998,7 +3002,7 @@ Return a JSON object with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=1200, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'breathing_exercises' in data:
             return data
     except Exception as e:
@@ -3071,7 +3075,7 @@ Rank ALL candidates. Return JSON with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'ranked_candidates' in data:
             return data
     except Exception as e:
@@ -3126,7 +3130,7 @@ Return JSON with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=1500, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'email_template' in data:
             return data
     except Exception as e:
@@ -3183,7 +3187,7 @@ Return JSON with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=1200, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'overall_sentiment' in data:
             return data
     except Exception as e:
@@ -3275,7 +3279,7 @@ Build a comprehensive DNA profile. Return JSON with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=1800, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'disc_type' in data:
             return data
     except Exception as e:
@@ -3345,7 +3349,7 @@ Return JSON with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'rediscovered' in data:
             return data
     except Exception as e:
@@ -3426,7 +3430,7 @@ Return JSON with EXACTLY these fields:
 
     try:
         result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
-        data = _strip_json(result)
+        data = json.loads(_strip_json(result))
         if data and 'overall_interview_quality_score' in data:
             return data
     except Exception as e:

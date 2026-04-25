@@ -1040,7 +1040,7 @@ class BulkResumeScreenerView(APIView):
         resumes_data = []
         for cid in candidate_ids[:15]:
             try:
-                resume = Resume.objects.filter(user_id=str(cid), is_active=True).first()
+                resume = Resume.objects.filter(candidate_id=str(cid), is_active=True).first()
                 if resume and resume.parsed_data:
                     pd = resume.parsed_data
                     resumes_data.append({
@@ -1237,7 +1237,7 @@ class TalentRediscoveryView(APIView):
                 except Exception:
                     pass
                 try:
-                    resume = Resume.objects.filter(user_id=cid, is_active=True).first()
+                    resume = Resume.objects.filter(candidate_id=str(cid), is_active=True).first()
                     if resume and resume.parsed_data:
                         skills = resume.parsed_data.get('skills', [])
                 except Exception:
@@ -1350,4 +1350,3 @@ class InterviewQualityIntelligenceView(APIView):
         except Exception as e:
             logger.error(f'[InterviewQualityIntel] Failed: {e}')
             return Response({'error': f'Interview quality analysis failed: {str(e)}'}, status=500)
-            return Response({'error': f'Coaching analysis failed: {str(e)}'}, status=500)

@@ -542,10 +542,10 @@ class ATSReviewView(APIView):
             resume_id = request.data.get('resume_id')
             if not resume_id:
                 # Use active resume
-                resumes = Resume.objects.filter(user_id=str(request.user.id), is_active=True)
+                resumes = Resume.objects.filter(candidate_id=str(request.user.id), is_active=True)
                 resume = resumes.first()
             else:
-                resume = Resume.objects.get(id=resume_id, user_id=str(request.user.id))
+                resume = Resume.objects.get(id=resume_id, candidate_id=str(request.user.id))
 
             if not resume:
                 return Response({'error': 'No resume found. Upload a resume first.'}, status=404)
