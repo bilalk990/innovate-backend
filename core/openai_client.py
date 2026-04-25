@@ -1763,13 +1763,13 @@ CRITICAL: Skills array MUST have 10-12 items minimum. Experience MUST have 2-3 e
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MISSING 15 AI FEATURES - CANDIDATE SIDE (4 Features)
+# CANDIDATE SIDE — Job Fit & Profile Intelligence
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def predict_application_status(resume_data: dict, job_data: dict, user_id: str = None) -> dict:
+def predict_interview_likelihood(resume_data: dict, job_data: dict, user_id: str = None) -> dict:
     """
-    Feature 1: Predict likelihood of getting interview based on profile match.
-    Returns probability score and reasoning.
+    Predict likelihood of getting an interview based on profile-vs-job-data match.
+    Different from predict_application_status (which takes job_title/jd strings).
     """
     resume_summary = {
         'skills': (resume_data.get('skills') or [])[:15],
@@ -1818,9 +1818,10 @@ Return ONLY valid JSON:
         }
 
 
-def suggest_profile_improvements(current_profile: dict, target_role: str = '', user_id: str = None) -> dict:
+def suggest_profile_improvements_ai(current_profile: dict, target_role: str = '', user_id: str = None) -> dict:
     """
-    Feature 2: AI suggests what to add to profile based on role and experience level.
+    Suggest profile improvements based on target role and completion level.
+    Different from suggest_profile_improvements (which takes evaluation history).
     """
     profile_summary = {
         'name': current_profile.get('name', ''),
@@ -3001,7 +3002,7 @@ Return a JSON object with EXACTLY these fields:
 }}"""
 
     try:
-        result = _call_openai(prompt, max_tokens=1200, user_id=user_id)
+        result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
         data = json.loads(_strip_json(result))
         if data and 'breathing_exercises' in data:
             return data
