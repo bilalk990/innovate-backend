@@ -10,6 +10,7 @@ from accounts.views import (
     OfferPredictorView, FunnelAnalyzerView, TeamFitView, InterviewerCoachView,
     AnxietyCoachView, BulkResumeScreenerView, EmailCampaignView, SentimentTrackerView,
     CandidateDNAView, TalentRediscoveryView, InterviewQualityIntelligenceView,
+    HRDocumentGeneratorView, EmployeeHandbookBuilderView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -78,4 +79,8 @@ urlpatterns = [
     path('hr/candidate-dna/', CandidateDNAView.as_view(), name='hr-candidate-dna'),
     path('hr/talent-rediscovery/', TalentRediscoveryView.as_view(), name='hr-talent-rediscovery'),
     path('hr/interview-quality/', InterviewQualityIntelligenceView.as_view(), name='hr-interview-quality'),
+
+    # Feature Set 5 — HR Utility AI Tools
+    path('hr/generate-document/', HRDocumentGeneratorView.as_view(), name='hr-generate-document'),
+    path('hr/handbook-builder/', EmployeeHandbookBuilderView.as_view(), name='hr-handbook-builder'),
 ]

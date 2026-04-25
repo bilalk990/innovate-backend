@@ -3463,3 +3463,198 @@ Return JSON with EXACTLY these fields:
         'interview_process_score': {'structure': 55, 'consistency': 60, 'predictive_validity': 58, 'candidate_experience': 72},
         'executive_summary': f'Analyzed {len(interviews_summary)} interviews. Overall quality score is 62/100 — room for significant improvement. The biggest gains come from standardizing question sets and using structured scoring rubrics. Replace generic questions with behavioral STAR-format questions for higher predictive validity.'
     }
+
+
+# ── Feature Set 5: HR Utility AI Tools ─────────────────────────────────────
+
+def generate_hr_document(document_type: str, company_name: str, employee_name: str,
+                          employee_designation: str, employee_department: str,
+                          employee_id: str, additional_details: str, hr_name: str,
+                          hr_designation: str, country: str = 'Pakistan',
+                          user_id: str = None) -> dict:
+    """Generate any professional HR document — letters, certificates, notices."""
+    prompt = f"""You are a senior HR director and employment law specialist with 25+ years of experience drafting professional HR documents across multiple jurisdictions.
+
+Generate a complete, professional, legally-sound {document_type} for the following:
+
+COMPANY: {company_name}
+COUNTRY/JURISDICTION: {country}
+EMPLOYEE NAME: {employee_name}
+EMPLOYEE ID: {employee_id or 'N/A'}
+DESIGNATION: {employee_designation}
+DEPARTMENT: {employee_department}
+SITUATION/CONTEXT: {additional_details or 'Standard issuance'}
+ISSUED BY: {hr_name} ({hr_designation})
+DATE: {__import__('datetime').date.today().strftime('%B %d, %Y')}
+
+DOCUMENT TYPE GUIDANCE:
+- Warning Letter: Formal, firm but professional tone. Reference specific incident. Include improvement expectations and consequences.
+- Show Cause Notice: Legal tone. Give employee 48-72 hours to respond. Neutral, not accusatory.
+- Termination Letter: Clear, factual, compassionate. State final working day, handover process, dues settlement.
+- Experience Certificate: Warm, positive. Dates of employment, designation, contribution highlight.
+- Promotion Letter: Celebratory yet professional. New title, effective date, revised responsibilities, salary revision mention.
+- NOC (No Objection Certificate): Simple, clear authorization. State what company has no objection to.
+- Appointment/Offer Letter: Welcoming, detailed. Role, salary, benefits, joining date, terms.
+- Increment Letter: Positive. Old salary, new salary, effective date, appreciation note.
+- Appraisal Letter: Performance summary, rating, recognition, future expectations.
+- Transfer Letter: Factual. From location, to location, effective date, reason if appropriate.
+- Relieving Letter: Professional, clean. Confirms last working day, employee in good standing.
+- Disciplinary Action Notice: Stern but fair. Specific violation, action taken, appeal process.
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "document_title": "<Official document title e.g. 'Warning Letter — First Notice'>",
+  "document_content": "<Complete, fully formatted document ready to print. Include: Company letterhead placeholder, Date, Reference number, Employee details block, Subject line, Salutation, Full body paragraphs with proper professional language, Closing, Signature block. Use \\n for line breaks.>",
+  "tone_used": "<Formal/Strict/Supportive/Neutral/Celebratory>",
+  "legal_risk_level": "<Low/Medium/High>",
+  "legal_risk_reason": "<why this risk level, what to be careful about>",
+  "key_clauses": ["<important legally significant statement in document>", "<clause2>", "<clause3>"],
+  "dos": ["<what HR must do alongside this letter>", "<do2>", "<do3>"],
+  "donts": ["<critical mistake to avoid>", "<dont2>", "<dont3>"],
+  "follow_up_actions": [
+    {{"step": 1, "action": "<what to do after issuing>", "timeline": "<when>"}},
+    {{"step": 2, "action": "<follow-up step>", "timeline": "<when>"}},
+    {{"step": 3, "action": "<documentation step>", "timeline": "<when>"}}
+  ],
+  "employee_rights": "<Brief note on employee's legal rights related to this document>",
+  "recommended_witnesses": "<Who should witness or countersign this document>",
+  "documentation_checklist": ["<document to keep on file>", "<doc2>", "<doc3>"],
+  "alternative_version_note": "<When to use a softer or stricter version of this document>"
+}}
+
+Write the document_content as a complete, professional letter — not a template. Use the actual names and details provided. Make it ready to sign and send."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2500, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'document_content' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[HRDocument] OpenAI failed: {e}')
+
+    # Intelligent fallback
+    return {
+        'document_title': document_type,
+        'document_content': f"""{company_name}
+[Company Address]
+[City, Country]
+
+Date: {__import__('datetime').date.today().strftime('%B %d, %Y')}
+Ref: HR/{employee_id or '001'}/{__import__('datetime').date.today().year}
+
+{employee_name}
+{employee_designation}
+{employee_department}
+{company_name}
+
+Subject: {document_type}
+
+Dear {employee_name},
+
+This letter is being issued to you with reference to the matter concerning {additional_details or 'the subject mentioned above'}.
+
+Please be advised that {company_name} takes all such matters seriously and expects all employees to maintain the highest standards of professionalism and conduct.
+
+You are requested to acknowledge receipt of this letter and respond accordingly within the stipulated time.
+
+Should you have any questions, please do not hesitate to contact the HR department.
+
+Yours sincerely,
+
+{hr_name}
+{hr_designation}
+Human Resources Department
+{company_name}""",
+        'tone_used': 'Formal',
+        'legal_risk_level': 'Medium',
+        'legal_risk_reason': 'Ensure document is in line with local labor laws before issuing.',
+        'key_clauses': ['Employee acknowledgment required', 'Document to be filed in employee record', 'Appeal process must be communicated'],
+        'dos': ['Get employee signature for acknowledgment', 'Keep copy in HR file', 'Follow company disciplinary procedure'],
+        'donts': ['Do not issue verbally', 'Do not skip documentation', 'Do not violate labor law timelines'],
+        'follow_up_actions': [
+            {'step': 1, 'action': 'Get employee acknowledgment signature', 'timeline': 'Same day'},
+            {'step': 2, 'action': 'File original in employee personnel folder', 'timeline': 'Within 24 hours'},
+            {'step': 3, 'action': 'Schedule follow-up meeting if required', 'timeline': 'Within 1 week'},
+        ],
+        'employee_rights': 'Employee has the right to respond and appeal this decision through the grievance procedure.',
+        'recommended_witnesses': 'HR Manager + Line Manager should both sign as witnesses.',
+        'documentation_checklist': ['Signed copy of this letter', 'Employee acknowledgment form', 'Supporting evidence/incident report'],
+        'alternative_version_note': 'For repeated offenses, escalate to a Final Warning or Termination Notice.'
+    }
+
+
+def generate_employee_handbook(company_name: str, industry: str, company_size: str,
+                                country: str, culture_type: str, work_model: str,
+                                selected_sections: list, additional_notes: str = '',
+                                user_id: str = None) -> dict:
+    """Generate a complete, professional employee handbook tailored to the company."""
+    sections_text = ', '.join(selected_sections) if selected_sections else 'all standard sections'
+    prompt = f"""You are a world-class HR consultant and organizational development expert who has built employee handbooks for Fortune 500 companies and high-growth startups.
+
+Create a comprehensive, professional Employee Handbook for:
+
+COMPANY: {company_name}
+INDUSTRY: {industry}
+COMPANY SIZE: {company_size}
+COUNTRY/JURISDICTION: {country}
+CULTURE TYPE: {culture_type} (e.g. Startup/Corporate/Hybrid/Creative)
+WORK MODEL: {work_model} (e.g. Remote/Hybrid/On-site)
+SECTIONS TO INCLUDE: {sections_text}
+ADDITIONAL NOTES: {additional_notes or 'None'}
+
+Write each section with:
+- Clear, engaging professional language (not dry legal text)
+- Specific policies with actual timelines and numbers
+- Culture-appropriate tone for a {culture_type} company
+- Jurisdiction-appropriate policies for {country}
+- Industry-relevant examples for {industry}
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "handbook_title": "<e.g. '{company_name} — Employee Handbook 2025'>",
+  "company_tagline": "<a motivating tagline for the handbook intro>",
+  "welcome_message": "<warm, culture-aligned welcome from the CEO/HR — 3-4 paragraphs>",
+  "sections": [
+    {{
+      "title": "<Section Title>",
+      "icon": "<relevant emoji>",
+      "content": "<Full, detailed policy content — multiple paragraphs, specific timelines/numbers, real rules. Not a template — actual policy text ready to use.>",
+      "key_points": ["<summary bullet 1>", "<summary bullet 2>", "<summary bullet 3>"]
+    }}
+  ],
+  "company_values": ["<core value 1>", "<core value 2>", "<core value 3>", "<value 4>", "<value 5>"],
+  "acknowledgment_page": "<Complete acknowledgment statement for employees to sign — confirms they have read, understood, and agree to abide by this handbook>",
+  "revision_history": "<e.g. Version 1.0 — Effective [current date]>",
+  "hr_contact_note": "<where employees should direct questions>",
+  "total_pages_estimate": "<estimated page count if printed>",
+  "handbook_summary": "<2-3 sentence overview of what this handbook covers and company's commitment to employees>"
+}}
+
+Each section content should be COMPLETE and READY TO USE — not placeholders. Write real, usable policy language with specific numbers (e.g. '15 days annual leave', '3 warning steps before termination', etc.). Tailor everything to the {culture_type} culture and {country} labor laws."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=4000, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'sections' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[HandbookBuilder] OpenAI failed: {e}')
+
+    today_year = __import__('datetime').date.today().year
+    return {
+        'handbook_title': f'{company_name} — Employee Handbook {today_year}',
+        'company_tagline': 'Our People Are Our Greatest Asset',
+        'welcome_message': f'Welcome to {company_name}! We are thrilled to have you as part of our team. This handbook has been prepared to help you understand our company culture, policies, and the standards we uphold.\n\nAt {company_name}, we believe that a transparent, fair, and supportive workplace is the foundation of excellence. Every policy in this handbook reflects our commitment to creating an environment where you can thrive.\n\nPlease read this handbook carefully and keep it as a reference guide throughout your journey with us. Our HR team is always available to answer any questions you may have.',
+        'sections': [
+            {'title': 'Code of Conduct', 'icon': '⚖️', 'content': f'All employees of {company_name} are expected to conduct themselves professionally at all times. This includes treating colleagues, clients, and stakeholders with respect and dignity. Any form of harassment, discrimination, or misconduct will not be tolerated and may result in disciplinary action up to and including termination.', 'key_points': ['Professional conduct at all times', 'Zero tolerance for harassment', 'Respect for all stakeholders']},
+            {'title': 'Working Hours & Attendance', 'icon': '🕐', 'content': f'Standard working hours at {company_name} are 9:00 AM to 6:00 PM, Monday through Friday. Employees are expected to be punctual. Three unexplained late arrivals in a month may result in a formal warning. Overtime must be pre-approved by your line manager.', 'key_points': ['9 AM - 6 PM standard hours', 'Punctuality expected', 'Pre-approved overtime only']},
+            {'title': 'Leave Policy', 'icon': '🏖️', 'content': f'{company_name} provides all employees with 15 days of annual leave, 10 days of sick leave, and 3 days of casual leave per year. Leave must be applied for at least 48 hours in advance except in emergencies. Unused annual leave may be carried forward up to a maximum of 5 days.', 'key_points': ['15 days annual leave', '10 days sick leave', '3 days casual leave']},
+            {'title': 'Anti-Harassment Policy', 'icon': '🛡️', 'content': f'{company_name} is committed to maintaining a workplace free from all forms of harassment and discrimination. All complaints must be reported to HR within 7 days of the incident. All reports will be investigated confidentially within 14 working days.', 'key_points': ['Zero tolerance policy', 'Confidential reporting', '14-day investigation timeline']},
+        ],
+        'company_values': ['Integrity', 'Excellence', 'Collaboration', 'Innovation', 'Respect'],
+        'acknowledgment_page': f'I, ________________________, acknowledge that I have received, read, and understood the {company_name} Employee Handbook. I agree to abide by all policies, rules, and regulations outlined herein. I understand that violation of these policies may result in disciplinary action.\n\nEmployee Signature: ________________________\nDate: ________________________\nEmployee ID: ________________________',
+        'revision_history': f'Version 1.0 — Effective {__import__("datetime").date.today().strftime("%B %d, %Y")}',
+        'hr_contact_note': 'For any questions regarding this handbook, please contact the HR Department.',
+        'total_pages_estimate': '18-25 pages',
+        'handbook_summary': f'This handbook outlines {company_name}\'s core policies, values, and expectations for all employees. It serves as the definitive guide for workplace conduct and employment terms. {company_name} reserves the right to update this handbook and will communicate any changes to all employees.'
+    }

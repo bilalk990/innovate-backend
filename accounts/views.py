@@ -1350,3 +1350,93 @@ class InterviewQualityIntelligenceView(APIView):
         except Exception as e:
             logger.error(f'[InterviewQualityIntel] Failed: {e}')
             return Response({'error': f'Interview quality analysis failed: {str(e)}'}, status=500)
+
+
+class HRDocumentGeneratorView(APIView):
+    """POST /auth/hr/generate-document/ — Generate any professional HR document."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_hr_document
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        document_type = request.data.get('document_type', '').strip()
+        company_name = request.data.get('company_name', '').strip()
+        employee_name = request.data.get('employee_name', '').strip()
+        employee_designation = request.data.get('employee_designation', '').strip()
+        employee_department = request.data.get('employee_department', '').strip()
+        employee_id = request.data.get('employee_id', '').strip()
+        additional_details = request.data.get('additional_details', '').strip()
+        hr_name = request.data.get('hr_name', getattr(request.user, 'name', 'HR Manager')).strip()
+        hr_designation = request.data.get('hr_designation', 'HR Manager').strip()
+        country = request.data.get('country', 'Pakistan').strip()
+
+        if not document_type:
+            return Response({'error': 'document_type is required.'}, status=400)
+        if not employee_name:
+            return Response({'error': 'employee_name is required.'}, status=400)
+        if not company_name:
+            return Response({'error': 'company_name is required.'}, status=400)
+
+        try:
+            result = generate_hr_document(
+                document_type=document_type,
+                company_name=company_name,
+                employee_name=employee_name,
+                employee_designation=employee_designation or 'Employee',
+                employee_department=employee_department or 'General',
+                employee_id=employee_id,
+                additional_details=additional_details,
+                hr_name=hr_name,
+                hr_designation=hr_designation,
+                country=country,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[HRDocumentGenerator] Failed: {e}')
+            return Response({'error': f'Document generation failed: {str(e)}'}, status=500)
+
+
+class EmployeeHandbookBuilderView(APIView):
+    """POST /auth/hr/handbook-builder/ — Generate a complete employee handbook."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_employee_handbook
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        company_name = request.data.get('company_name', '').strip()
+        industry = request.data.get('industry', '').strip()
+        company_size = request.data.get('company_size', '').strip()
+        country = request.data.get('country', 'Pakistan').strip()
+        culture_type = request.data.get('culture_type', 'Professional').strip()
+        work_model = request.data.get('work_model', 'On-site').strip()
+        selected_sections = request.data.get('selected_sections', [])
+        additional_notes = request.data.get('additional_notes', '').strip()
+
+        if not company_name:
+            return Response({'error': 'company_name is required.'}, status=400)
+        if not industry:
+            return Response({'error': 'industry is required.'}, status=400)
+
+        try:
+            result = generate_employee_handbook(
+                company_name=company_name,
+                industry=industry,
+                company_size=company_size or '50-200 employees',
+                country=country,
+                culture_type=culture_type,
+                work_model=work_model,
+                selected_sections=selected_sections,
+                additional_notes=additional_notes,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[HandbookBuilder] Failed: {e}')
+            return Response({'error': f'Handbook generation failed: {str(e)}'}, status=500)
