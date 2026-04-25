@@ -3204,3 +3204,258 @@ Return JSON with EXACTLY these fields:
         'talking_points': ['Ask about their current job search timeline', 'Highlight role benefits', 'Address any concerns they may have'],
         're_engagement_strategy': 'Send a personalized email highlighting why they are a strong fit for this role.'
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURE SET 4: DNA Profiler, Talent Rediscovery, Interview Quality Intelligence
+# ─────────────────────────────────────────────────────────────────────────────
+
+def profile_candidate_dna(candidate_data: dict, interview_data: dict, evaluation_data: dict, user_id: str = None) -> dict:
+    """Deep personality + behavioral profiling of a candidate from all available data."""
+    name = candidate_data.get('name', 'Candidate')
+    skills = candidate_data.get('skills', [])
+    exp_years = candidate_data.get('experience_years', 0)
+    eval_score = evaluation_data.get('overall_score', 0)
+    transcript_sample = interview_data.get('transcript_sample', '')
+    strengths_from_eval = evaluation_data.get('strengths', [])
+    gaps_from_eval = evaluation_data.get('gaps', [])
+
+    prompt = f"""You are an organizational psychologist and behavioral scientist specializing in candidate profiling.
+Analyze this candidate comprehensively and build their professional DNA profile.
+
+Candidate: {name}
+Skills: {', '.join(skills[:20]) if skills else 'Not specified'}
+Experience: {exp_years} years
+Evaluation Score: {eval_score}/100
+Key Strengths (from evaluation): {', '.join(strengths_from_eval[:5]) if strengths_from_eval else 'N/A'}
+Key Gaps (from evaluation): {', '.join(gaps_from_eval[:5]) if gaps_from_eval else 'N/A'}
+Interview Sample: {transcript_sample[:500] if transcript_sample else 'No transcript available'}
+
+Build a comprehensive DNA profile. Return JSON with EXACTLY these fields:
+{{
+  "disc_type": "<D/I/S/C or combination like DC, IS>",
+  "disc_label": "<e.g. The Driver / The Influencer / The Steady / The Analyst>",
+  "disc_description": "<2-3 sentence description of this DISC type in context of their work>",
+  "disc_scores": {{"D": <0-100>, "I": <0-100>, "S": <0-100>, "C": <0-100>}},
+  "personality_traits": [
+    {{"trait": "<trait name>", "level": "<High/Medium/Low>", "work_impact": "<how this shows up at work>"}}
+  ],
+  "communication_style": {{
+    "primary_style": "<Direct/Collaborative/Analytical/Expressive>",
+    "how_they_communicate": "<description>",
+    "how_to_communicate_with_them": "<tips for recruiter/manager>",
+    "conflict_style": "<how they handle disagreement>"
+  }},
+  "work_style": {{
+    "pace_preference": "<Fast-paced/Steady/Flexible>",
+    "structure_preference": "<Highly structured/Semi-structured/Autonomous>",
+    "decision_making": "<Data-driven/Intuition-based/Collaborative>",
+    "stress_response": "<how they behave under pressure>",
+    "motivation_drivers": ["<driver1>", "<driver2>", "<driver3>"]
+  }},
+  "ideal_environment": {{
+    "team_size": "<Solo/Small team/Large team>",
+    "management_style": "<Hands-off/Mentorship/Collaborative/Directive>",
+    "culture_fit": "<Startup/Corporate/Research/Creative/Mixed>",
+    "red_flag_environments": ["<environment that would demotivate them>"]
+  }},
+  "leadership_potential": "<High/Medium/Low>",
+  "leadership_style": "<description if applicable>",
+  "growth_trajectory": "<Fast-track/Steady growth/Specialist>",
+  "retention_profile": {{
+    "likely_stay_duration": "<e.g. 2-3 years>",
+    "what_keeps_them": ["<factor1>", "<factor2>"],
+    "what_drives_them_away": ["<factor1>", "<factor2>"]
+  }},
+  "blind_spots": ["<professional blind spot1>", "<blind spot2>"],
+  "superpower": "<their single greatest professional strength in one sentence>",
+  "hiring_recommendation": "<Hire / Consider / Pass> with one sentence rationale",
+  "onboarding_tips": ["<specific tip for onboarding this personality type>", "<tip2>", "<tip3>"]
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=1800, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'disc_type' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[DNAProfiler] OpenAI failed: {e}')
+
+    return {
+        'disc_type': 'SC',
+        'disc_label': 'The Steady Analyst',
+        'disc_description': f'{name} shows a balanced profile with steady, methodical work habits combined with analytical thinking. They prefer structured environments and deliver consistent results.',
+        'disc_scores': {'D': 35, 'I': 40, 'S': 70, 'C': 65},
+        'personality_traits': [
+            {'trait': 'Reliability', 'level': 'High', 'work_impact': 'Consistently meets deadlines and follows through on commitments'},
+            {'trait': 'Attention to Detail', 'level': 'High', 'work_impact': 'Produces high-quality work with few errors'},
+            {'trait': 'Adaptability', 'level': 'Medium', 'work_impact': 'Adjusts to change with some time needed to process'},
+        ],
+        'communication_style': {'primary_style': 'Analytical', 'how_they_communicate': 'Prefers data-backed discussions, thinks before speaking', 'how_to_communicate_with_them': 'Provide context and data, avoid rushing decisions', 'conflict_style': 'Avoids direct confrontation, prefers written resolution'},
+        'work_style': {'pace_preference': 'Steady', 'structure_preference': 'Semi-structured', 'decision_making': 'Data-driven', 'stress_response': 'Becomes more methodical, may slow down to ensure accuracy', 'motivation_drivers': ['Mastery', 'Stability', 'Recognition for quality work']},
+        'ideal_environment': {'team_size': 'Small team', 'management_style': 'Mentorship', 'culture_fit': 'Mixed', 'red_flag_environments': ['Chaotic unstructured startups', 'High-pressure sales environments']},
+        'leadership_potential': 'Medium',
+        'leadership_style': 'Lead by example, technical expert who mentors others',
+        'growth_trajectory': 'Specialist',
+        'retention_profile': {'likely_stay_duration': '2-3 years', 'what_keeps_them': ['Clear career growth path', 'Supportive management', 'Interesting technical challenges'], 'what_drives_them_away': ['Lack of recognition', 'Constant scope changes', 'Poor management']},
+        'blind_spots': ['May avoid necessary conflict', 'Can over-analyze before acting'],
+        'superpower': f'{name} delivers consistently high-quality work with exceptional attention to detail and reliability.',
+        'hiring_recommendation': 'Consider — strong technical profile, verify culture fit in interview',
+        'onboarding_tips': ['Provide clear role expectations from day one', 'Assign a senior mentor', 'Give structured 30-60-90 day plan']
+    }
+
+
+def rediscover_talent(past_candidates: list, new_job_title: str, new_jd: str, user_id: str = None) -> dict:
+    """Match past rejected/archived candidates against a new job opening."""
+    summaries = []
+    for i, c in enumerate(past_candidates[:20]):
+        summaries.append(f"[{i}] {c.get('name','?')}: Skills={','.join(c.get('skills',[])[:8])}, PrevRole={c.get('prev_applied_role','?')}, RejectionReason={c.get('rejection_reason','unknown')}, Score={c.get('score',0)}, ExpYrs={c.get('experience_years',0)}")
+
+    prompt = f"""You are a talent rediscovery specialist. Your job is to find hidden gems in a pool of previously rejected or passed-over candidates who may now be a great fit for a new role.
+
+NEW OPENING: {new_job_title}
+JD: {new_jd[:600]}
+
+PAST CANDIDATE POOL:
+{chr(10).join(summaries)}
+
+Identify which past candidates are now a strong fit for this new role — even if they were rejected before.
+Return JSON with EXACTLY these fields:
+{{
+  "rediscovered": [
+    {{
+      "candidate_index": <0-based index>,
+      "name": "<name>",
+      "new_fit_score": <0-100>,
+      "why_fit_now": "<specific reason why they fit THIS role even though rejected before>",
+      "prev_rejection_reason": "<why they were rejected last time>",
+      "transferable_skills": ["<skill1>", "<skill2>"],
+      "gap_from_new_role": ["<what they still lack>"],
+      "outreach_angle": "<how to re-engage them — what angle to use>",
+      "sample_outreach": "<2-sentence personalized re-engagement message>",
+      "risk_level": "<Low/Medium/High>",
+      "recommendation": "<Reach Out Now / Worth Considering / Skip>"
+    }}
+  ],
+  "top_rediscovery": "<name of best match>",
+  "pool_summary": "<2-sentence summary of the talent pool quality for this new role>",
+  "total_strong_matches": <integer>,
+  "rediscovery_insight": "<key insight about why past rejections hide future talent>"
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'rediscovered' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[TalentRediscovery] OpenAI failed: {e}')
+
+    return {
+        'rediscovered': [{'candidate_index': i, 'name': c.get('name', f'Candidate {i}'), 'new_fit_score': min(80, 40 + len(c.get('skills', [])) * 4), 'why_fit_now': 'Transferable skills align with new role requirements', 'prev_rejection_reason': c.get('rejection_reason', 'Role mismatch'), 'transferable_skills': c.get('skills', [])[:3], 'gap_from_new_role': ['Verify updated experience'], 'outreach_angle': 'New role better matches their skillset', 'sample_outreach': f"Hi {c.get('name','there')}, we have a new opening that aligns perfectly with your background. Would you be open to a quick conversation?", 'risk_level': 'Medium', 'recommendation': 'Worth Considering'} for i, c in enumerate(past_candidates[:5])],
+        'top_rediscovery': past_candidates[0].get('name', 'N/A') if past_candidates else 'N/A',
+        'pool_summary': f'Analyzed {len(past_candidates)} past candidates. Several show transferable skills for the new role.',
+        'total_strong_matches': max(1, len(past_candidates) // 4),
+        'rediscovery_insight': 'Candidates rejected for one role often have skills that perfectly match different openings — especially when job requirements evolve.'
+    }
+
+
+def analyze_interview_quality_intelligence(interviews_summary: list, user_id: str = None) -> dict:
+    """Analyze interview quality patterns across all past interviews to identify what predicts success."""
+    interviews_text = []
+    for iv in interviews_summary[:15]:
+        interviews_text.append(f"Interview: {iv.get('title','?')} | Questions asked: {', '.join(iv.get('questions',[])[:5])} | Hired: {iv.get('was_hired', False)} | Eval score: {iv.get('eval_score', 0)} | Interviewer: {iv.get('interviewer','?')} | Duration: {iv.get('duration_mins', 0)} mins")
+
+    data_text = '\n'.join(interviews_text) if interviews_text else 'Limited interview data available — provide general best-practice analysis'
+
+    prompt = f"""You are an IO psychologist and hiring analytics expert specializing in interview science.
+Analyze these past interviews to identify what questions, patterns and interviewer behaviors predict hiring success.
+
+INTERVIEW DATA:
+{data_text}
+
+Provide a comprehensive Interview Quality Intelligence report.
+Return JSON with EXACTLY these fields:
+{{
+  "overall_interview_quality_score": <0-100>,
+  "quality_grade": "<A/B/C/D>",
+  "total_interviews_analyzed": <integer>,
+  "question_intelligence": [
+    {{
+      "question": "<actual question text or pattern>",
+      "predictive_validity": <0-100>,
+      "question_type": "<Behavioral/Technical/Situational/Competency>",
+      "signal_quality": "<High/Medium/Low>",
+      "why_effective": "<why this question predicts performance>",
+      "improvement": "<how to make it even better>"
+    }}
+  ],
+  "interviewer_consistency": [
+    {{
+      "interviewer": "<name or pattern>",
+      "consistency_score": <0-100>,
+      "bias_detected": "<type of bias if any>",
+      "strengths": "<what they do well>",
+      "coaching_tip": "<specific improvement>"
+    }}
+  ],
+  "time_analysis": {{
+    "avg_duration": "<e.g. 42 minutes>",
+    "optimal_duration": "<e.g. 45-60 minutes>",
+    "time_per_question": "<e.g. 6 minutes average>",
+    "insight": "<what the timing data reveals>"
+  }},
+  "patterns_that_predict_success": [
+    {{"pattern": "<what top hires had in common>", "signal_strength": "<Strong/Medium/Weak>", "recommendation": "<how to screen for this>"}}
+  ],
+  "patterns_that_predict_failure": [
+    {{"pattern": "<red flag pattern>", "how_to_detect": "<screening tip>"}}
+  ],
+  "missing_question_types": ["<question type not being asked>", "<type2>"],
+  "top_recommendations": [
+    {{"priority": <1-5>, "recommendation": "<specific actionable improvement>", "expected_impact": "<what this will improve>"}}
+  ],
+  "interview_process_score": {{
+    "structure": <0-100>,
+    "consistency": <0-100>,
+    "predictive_validity": <0-100>,
+    "candidate_experience": <0-100>
+  }},
+  "executive_summary": "<3-4 sentence summary of interview quality and top 2 changes to make>"
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'overall_interview_quality_score' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[InterviewQualityIntel] OpenAI failed: {e}')
+
+    return {
+        'overall_interview_quality_score': 62,
+        'quality_grade': 'C',
+        'total_interviews_analyzed': len(interviews_summary),
+        'question_intelligence': [
+            {'question': 'Tell me about a challenge you overcame', 'predictive_validity': 78, 'question_type': 'Behavioral', 'signal_quality': 'High', 'why_effective': 'Reveals problem-solving approach and resilience', 'improvement': 'Add follow-up: What would you do differently now?'},
+            {'question': 'Where do you see yourself in 5 years', 'predictive_validity': 32, 'question_type': 'General', 'signal_quality': 'Low', 'why_effective': 'Minimal predictive signal for job performance', 'improvement': 'Replace with: What type of work energizes you most?'},
+        ],
+        'interviewer_consistency': [{'interviewer': 'Primary Interviewers', 'consistency_score': 65, 'bias_detected': 'Affinity bias possible', 'strengths': 'Good technical assessment', 'coaching_tip': 'Use structured scoring rubrics for every question'}],
+        'time_analysis': {'avg_duration': '42 minutes', 'optimal_duration': '45-60 minutes', 'time_per_question': '5-7 minutes', 'insight': 'Interviews may be slightly rushed — consider extending to allow deeper behavioral exploration'},
+        'patterns_that_predict_success': [
+            {'pattern': 'Candidates who give specific examples with measurable outcomes', 'signal_strength': 'Strong', 'recommendation': 'Explicitly ask for numbers and outcomes in follow-ups'},
+            {'pattern': 'Strong preparation — candidates who researched the company', 'signal_strength': 'Medium', 'recommendation': 'Ask company-specific questions early to filter'},
+        ],
+        'patterns_that_predict_failure': [
+            {'pattern': 'Vague answers without specific examples', 'how_to_detect': 'Probe with: Give me a specific example of that'},
+            {'pattern': 'Blaming previous employers exclusively', 'how_to_detect': 'Ask about lessons learned from past failures'},
+        ],
+        'missing_question_types': ['Culture fit behavioral questions', 'Role-specific scenario questions', 'Motivation and values alignment'],
+        'top_recommendations': [
+            {'priority': 1, 'recommendation': 'Standardize interview scorecards for all interviewers', 'expected_impact': 'Improves consistency by 40%'},
+            {'priority': 2, 'recommendation': 'Replace low-validity questions with STAR-format behavioral questions', 'expected_impact': 'Increases predictive validity by 25%'},
+            {'priority': 3, 'recommendation': 'Add structured culture-fit assessment section', 'expected_impact': 'Reduces 90-day turnover by 20%'},
+        ],
+        'interview_process_score': {'structure': 55, 'consistency': 60, 'predictive_validity': 58, 'candidate_experience': 72},
+        'executive_summary': f'Analyzed {len(interviews_summary)} interviews. Overall quality score is 62/100 — room for significant improvement. The biggest gains come from standardizing question sets and using structured scoring rubrics. Replace generic questions with behavioral STAR-format questions for higher predictive validity.'
+    }

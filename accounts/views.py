@@ -1130,4 +1130,224 @@ class SentimentTrackerView(APIView):
         except Exception as e:
             logger.error(f'[SentimentTracker] Failed: {e}')
             return Response({'error': f'Sentiment analysis failed: {str(e)}'}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURE SET 4 VIEWS — DNA Profiler, Talent Rediscovery, Interview Quality Intel
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CandidateDNAView(APIView):
+    """POST /auth/hr/candidate-dna/ — Deep personality + behavioral profiling."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import profile_candidate_dna
+        from resumes.models import Resume
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        candidate_id = request.data.get('candidate_id', '')
+        if not candidate_id:
+            return Response({'error': 'candidate_id is required.'}, status=400)
+
+        # Build candidate data from DB
+        candidate_data = {'name': 'Candidate', 'skills': [], 'experience_years': 0}
+        interview_data = {'transcript_sample': ''}
+        evaluation_data = {'overall_score': 0, 'strengths': [], 'gaps': []}
+
+        try:
+            cand = User.objects.get(id=candidate_id)
+            candidate_data['name'] = cand.name or cand.email
+            candidate_data['skills'] = list(getattr(cand, 'skills', []) or [])
+        except Exception:
+            pass
+
+        try:
+            resume = Resume.objects.filter(user_id=str(candidate_id), is_active=True).first()
+            if resume and resume.parsed_data:
+                pd = resume.parsed_data
+                candidate_data['skills'] = pd.get('skills', candidate_data['skills'])
+                candidate_data['experience_years'] = pd.get('total_experience_years', 0)
+        except Exception:
+            pass
+
+        try:
+            from interviews.models import Interview
+            from evaluations.models import Evaluation
+            ivs = Interview.objects.filter(candidate_id=str(candidate_id)).order_by('-created_at')[:3]
+            transcripts = []
+            for iv in ivs:
+                if hasattr(iv, 'full_transcript') and iv.full_transcript:
+                    for entry in (iv.full_transcript or [])[:5]:
+                        if entry.get('role') == 'candidate':
+                            transcripts.append(entry.get('content', ''))
+            interview_data['transcript_sample'] = ' '.join(transcripts)[:500]
+
+            evals = Evaluation.objects.filter(candidate_id=str(candidate_id)).order_by('-created_at')[:1]
+            if evals:
+                ev = evals[0]
+                evaluation_data['overall_score'] = getattr(ev, 'overall_score', 0) or 0
+                if hasattr(ev, 'ai_summary') and ev.ai_summary:
+                    evaluation_data['strengths'] = ev.ai_summary.get('strengths', [])
+                    evaluation_data['gaps'] = ev.ai_summary.get('gaps', [])
+        except Exception:
+            pass
+
+        try:
+            result = profile_candidate_dna(candidate_data, interview_data, evaluation_data, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[CandidateDNA] Failed: {e}')
+            return Response({'error': f'DNA profiling failed: {str(e)}'}, status=500)
+
+
+class TalentRediscoveryView(APIView):
+    """POST /auth/hr/talent-rediscovery/ — Find past candidates for new openings."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import rediscover_talent
+        from resumes.models import Resume
+        from evaluations.models import Evaluation
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        new_job_title = request.data.get('job_title', '')
+        new_jd = request.data.get('jd_text', '')
+        if not new_job_title.strip():
+            return Response({'error': 'job_title is required.'}, status=400)
+
+        # Gather past candidates who were evaluated (not currently active)
+        past_candidates = []
+        try:
+            evals = Evaluation.objects.filter(recruiter_id=str(request.user.id)).order_by('-created_at')[:30]
+            seen_ids = set()
+            for ev in evals:
+                cid = str(ev.candidate_id)
+                if cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                cname = 'Candidate'
+                skills = []
+                try:
+                    cand = User.objects.get(id=cid)
+                    cname = cand.name or cand.email
+                except Exception:
+                    pass
+                try:
+                    resume = Resume.objects.filter(user_id=cid, is_active=True).first()
+                    if resume and resume.parsed_data:
+                        skills = resume.parsed_data.get('skills', [])
+                except Exception:
+                    pass
+
+                prev_role = getattr(ev, 'job_title', '') or ''
+                score = getattr(ev, 'overall_score', 0) or 0
+                decision = getattr(ev, 'hire_decision', '') or ''
+                rejection = 'Role mismatch' if not decision or decision.lower() in ['no', 'reject', 'pass'] else 'Considered'
+
+                past_candidates.append({
+                    'candidate_id': cid,
+                    'name': cname,
+                    'skills': skills,
+                    'prev_applied_role': prev_role,
+                    'rejection_reason': rejection,
+                    'score': score,
+                    'experience_years': 0,
+                })
+        except Exception as e:
+            logger.warning(f'[TalentRediscovery] DB fetch error: {e}')
+
+        if not past_candidates:
+            # Use manually provided candidate_ids if no evals found
+            provided_ids = request.data.get('candidate_ids', [])
+            for cid in provided_ids[:20]:
+                cname = 'Candidate'
+                skills = []
+                try:
+                    cand = User.objects.get(id=cid)
+                    cname = cand.name or cand.email
+                    skills = list(getattr(cand, 'skills', []) or [])
+                except Exception:
+                    pass
+                past_candidates.append({'candidate_id': str(cid), 'name': cname, 'skills': skills, 'prev_applied_role': 'Previous Role', 'rejection_reason': 'Role mismatch', 'score': 0, 'experience_years': 0})
+
+        if not past_candidates:
+            return Response({'error': 'No past candidate data found. Complete some evaluations first or provide candidate_ids.'}, status=400)
+
+        try:
+            result = rediscover_talent(past_candidates, new_job_title, new_jd, user_id=str(request.user.id))
+            # Attach candidate_ids back to results
+            for rd in result.get('rediscovered', []):
+                idx = rd.get('candidate_index', 0)
+                if idx < len(past_candidates):
+                    rd['candidate_id'] = past_candidates[idx].get('candidate_id', '')
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[TalentRediscovery] Failed: {e}')
+            return Response({'error': f'Talent rediscovery failed: {str(e)}'}, status=500)
+
+
+class InterviewQualityIntelligenceView(APIView):
+    """POST /auth/hr/interview-quality/ — Analyze interview patterns across all past interviews."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import analyze_interview_quality_intelligence
+        from interviews.models import Interview
+        from evaluations.models import Evaluation
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        interviews_summary = []
+        try:
+            ivs = Interview.objects.filter(recruiter_id=str(request.user.id)).order_by('-created_at')[:20]
+            for iv in ivs:
+                questions = []
+                if hasattr(iv, 'questions') and iv.questions:
+                    for q in (iv.questions or [])[:6]:
+                        if isinstance(q, dict):
+                            questions.append(q.get('question', q.get('text', '')))
+                        elif isinstance(q, str):
+                            questions.append(q)
+
+                eval_score = 0
+                was_hired = False
+                try:
+                    ev = Evaluation.objects.filter(interview_id=str(iv.id)).first()
+                    if ev:
+                        eval_score = getattr(ev, 'overall_score', 0) or 0
+                        hire_dec = getattr(ev, 'hire_decision', '') or ''
+                        was_hired = hire_dec.lower() in ['yes', 'hire', 'strong hire']
+                except Exception:
+                    pass
+
+                duration = 0
+                if hasattr(iv, 'started_at') and hasattr(iv, 'ended_at') and iv.started_at and iv.ended_at:
+                    try:
+                        delta = iv.ended_at - iv.started_at
+                        duration = int(delta.total_seconds() / 60)
+                    except Exception:
+                        pass
+
+                interviews_summary.append({
+                    'title': iv.title or 'Interview',
+                    'questions': questions,
+                    'was_hired': was_hired,
+                    'eval_score': eval_score,
+                    'interviewer': getattr(request.user, 'name', 'Recruiter'),
+                    'duration_mins': duration,
+                })
+        except Exception as e:
+            logger.warning(f'[InterviewQualityIntel] DB fetch: {e}')
+
+        try:
+            result = analyze_interview_quality_intelligence(interviews_summary, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[InterviewQualityIntel] Failed: {e}')
+            return Response({'error': f'Interview quality analysis failed: {str(e)}'}, status=500)
             return Response({'error': f'Coaching analysis failed: {str(e)}'}, status=500)
