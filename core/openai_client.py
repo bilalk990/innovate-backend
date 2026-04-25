@@ -2896,3 +2896,311 @@ All scores must be 0-100."""
             'recommended_training': ['Structured Interviewing Techniques', 'Unconscious Bias Awareness'],
             'next_interview_checklist': ['Prepare STAR-method questions', 'Cover all key competencies', 'Avoid leading questions', 'Take structured notes']
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURE SET 3: Candidate + Recruiter Advanced AI Features
+# ─────────────────────────────────────────────────────────────────────────────
+
+def review_resume_ats(parsed_data: dict, user_id: str = None) -> dict:
+    """Full ATS review: score, weak points, fix suggestions for a parsed resume."""
+    skills = parsed_data.get('skills', [])
+    experience = parsed_data.get('experience', [])
+    education = parsed_data.get('education', [])
+    summary = parsed_data.get('summary', '')
+    name = parsed_data.get('name', 'Candidate')
+
+    prompt = f"""You are an expert ATS (Applicant Tracking System) analyst and career coach.
+Analyze this resume data and provide a comprehensive ATS compatibility review.
+
+Resume Data:
+- Name: {name}
+- Summary: {summary[:300] if summary else 'None'}
+- Skills: {', '.join(skills[:30]) if skills else 'None listed'}
+- Experience entries: {len(experience)} positions
+- Education entries: {len(education)} entries
+- Total experience (years): {parsed_data.get('total_experience_years', 'Unknown')}
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "ats_score": <integer 0-100>,
+  "ats_grade": "<A/B/C/D/F>",
+  "ats_verdict": "<ATS-Friendly / Needs Improvement / Poor ATS Compatibility>",
+  "estimated_pass_rate": "<e.g. 72% of ATS systems>",
+  "strengths": ["<strength1>", "<strength2>", "<strength3>"],
+  "weak_points": [
+    {{"section": "<section name>", "problem": "<what is wrong>", "why_it_matters": "<impact>", "fix": "<exact fix>"}}
+  ],
+  "formatting_issues": [
+    {{"issue": "<issue>", "impact": "<ATS impact>", "fix": "<how to fix>"}}
+  ],
+  "keyword_density_score": <integer 0-100>,
+  "missing_power_keywords": ["<keyword1>", "<keyword2>", "<keyword3>", "<keyword4>", "<keyword5>"],
+  "quick_wins": ["<actionable fix in 5 min>", "<fix2>", "<fix3>"],
+  "detailed_recommendations": [
+    {{"category": "<Summary/Skills/Experience/Education/Formatting>", "recommendation": "<detailed advice>", "priority": "<High/Medium/Low>"}}
+  ],
+  "action_plan": "<2-3 sentence personalized action plan for this candidate>"
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=1400, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'ats_score' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[ATSReview] OpenAI failed: {e}')
+
+    score = min(95, max(30, 40 + len(skills) * 2 + len(experience) * 5 + (20 if summary else 0)))
+    return {
+        'ats_score': score,
+        'ats_grade': 'B' if score >= 70 else 'C' if score >= 50 else 'D',
+        'ats_verdict': 'Needs Improvement',
+        'estimated_pass_rate': f'{score}% of ATS systems',
+        'strengths': ['Skills section present', 'Work experience included'] if skills and experience else ['Resume uploaded successfully'],
+        'weak_points': [{'section': 'Summary', 'problem': 'Generic or missing summary', 'why_it_matters': 'ATS scores summaries for keyword density', 'fix': 'Add a 2-3 sentence keyword-rich professional summary'}],
+        'formatting_issues': [{'issue': 'Complex formatting may not parse correctly', 'impact': 'ATS may skip sections', 'fix': 'Use simple single-column layout with standard section headers'}],
+        'keyword_density_score': 50,
+        'missing_power_keywords': ['quantified achievements', 'action verbs', 'industry keywords', 'technical stack', 'certifications'],
+        'quick_wins': ['Add a professional summary', 'Quantify achievements with numbers', 'Use standard section headers (Experience, Education, Skills)'],
+        'detailed_recommendations': [{'category': 'Skills', 'recommendation': 'Add more specific technical skills relevant to your target role', 'priority': 'High'}],
+        'action_plan': 'Focus on adding a keyword-rich summary and quantifying your achievements to improve ATS pass rate significantly.'
+    }
+
+
+def generate_anxiety_coaching(role: str, experience_level: str, concerns: str, user_id: str = None) -> dict:
+    """Generate personalized pre-interview anxiety coaching plan."""
+    prompt = f"""You are a professional interview coach and performance psychologist specializing in interview anxiety.
+A candidate is preparing for a {role} interview at {experience_level} level.
+Their specific concerns: {concerns or 'General interview anxiety and nervousness'}
+
+Create a comprehensive, personalized anxiety coaching plan.
+Return a JSON object with EXACTLY these fields:
+{{
+  "personalized_message": "<warm, encouraging 2-sentence message directly addressing their concerns>",
+  "anxiety_level_assessment": "<Low/Moderate/High based on concerns>",
+  "root_cause_analysis": "<brief analysis of likely root causes>",
+  "breathing_exercises": [
+    {{"name": "<exercise name>", "duration": "<e.g. 5 minutes>", "steps": ["<step1>", "<step2>", "<step3>"], "benefit": "<specific benefit>", "when_to_use": "<before/during interview>"}}
+  ],
+  "mindset_reframes": [
+    {{"negative_thought": "<common negative thought>", "reframe": "<positive reframe>", "affirmation": "<power phrase>"}}
+  ],
+  "power_poses": [
+    {{"name": "<pose name>", "duration": "<duration>", "how_to": "<description>", "effect": "<psychological effect>"}}
+  ],
+  "day_of_ritual": ["<step1 morning>", "<step2>", "<step3>", "<step4>", "<step5 right before>"],
+  "during_interview_anchors": ["<technique to calm yourself mid-interview>", "<technique2>", "<technique3>"],
+  "confidence_builders": ["<specific to their role/level>", "<builder2>", "<builder3>", "<builder4>"],
+  "emergency_reset": "<30-second technique if panic hits during interview>",
+  "post_interview_care": "<what to do regardless of outcome>"
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=1200, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'breathing_exercises' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[AnxietyCoach] OpenAI failed: {e}')
+
+    return {
+        'personalized_message': f'Feeling nervous about your {role} interview is completely normal. Let us channel that energy into confidence.',
+        'anxiety_level_assessment': 'Moderate',
+        'root_cause_analysis': 'Performance anxiety often stems from fear of judgment and uncertainty about outcomes.',
+        'breathing_exercises': [
+            {'name': 'Box Breathing', 'duration': '5 minutes', 'steps': ['Inhale for 4 counts', 'Hold for 4 counts', 'Exhale for 4 counts', 'Hold for 4 counts'], 'benefit': 'Activates parasympathetic nervous system', 'when_to_use': '10 minutes before interview'},
+            {'name': '4-7-8 Breathing', 'duration': '3 minutes', 'steps': ['Inhale for 4 counts', 'Hold for 7 counts', 'Exhale for 8 counts'], 'benefit': 'Rapidly reduces cortisol', 'when_to_use': 'If anxiety spikes during interview'}
+        ],
+        'mindset_reframes': [
+            {'negative_thought': 'I might fail', 'reframe': 'This is a conversation to explore mutual fit', 'affirmation': 'I bring unique value to every conversation'},
+            {'negative_thought': 'They will judge me', 'reframe': 'They are hoping I am the right person', 'affirmation': 'I am prepared and I belong here'}
+        ],
+        'power_poses': [{'name': 'Wonder Woman', 'duration': '2 minutes', 'how_to': 'Stand tall, hands on hips, chest out', 'effect': 'Increases testosterone, reduces cortisol by 25%'}],
+        'day_of_ritual': ['Wake up 90 minutes early', 'Light exercise or walk', 'Review your top 3 achievements', 'Power pose for 2 minutes', 'Arrive 15 minutes early and breathe'],
+        'during_interview_anchors': ['Pause and breathe before answering', 'Sip water to reset', 'Remember: they want you to succeed'],
+        'confidence_builders': ['Review your biggest achievement', 'Read positive feedback you have received', 'Dress in your power outfit', 'Prepare 3 strong questions to ask'],
+        'emergency_reset': 'Press your feet firmly into the floor, take one deep breath, and say internally: I am calm and prepared.',
+        'post_interview_care': 'Regardless of outcome, write 3 things you did well. Growth happens through every interview experience.'
+    }
+
+
+def screen_resumes_bulk(resumes_data: list, jd_text: str, job_title: str, user_id: str = None) -> dict:
+    """Screen and rank multiple resumes against a job description."""
+    summaries = []
+    for i, r in enumerate(resumes_data[:15]):
+        skills = r.get('skills', [])
+        name = r.get('name', f'Candidate {i+1}')
+        summaries.append(f"[{i+1}] {name}: Skills={', '.join(skills[:10]) if skills else 'none'}, Experience={r.get('experience_years', 0)}yrs, Education={r.get('education_level','unknown')}, Summary={r.get('summary','')[:150]}")
+
+    candidates_text = '\n'.join(summaries)
+    prompt = f"""You are a senior technical recruiter and resume screening expert.
+Screen these {len(resumes_data)} candidates against the job description below.
+
+JOB: {job_title}
+JD: {jd_text[:800]}
+
+CANDIDATES:
+{candidates_text}
+
+Rank ALL candidates. Return JSON with EXACTLY these fields:
+{{
+  "ranked_candidates": [
+    {{
+      "rank": <1-based integer>,
+      "candidate_index": <0-based index from input>,
+      "name": "<candidate name>",
+      "match_score": <integer 0-100>,
+      "tier": "<Tier 1: Strong / Tier 2: Good / Tier 3: Consider / Tier 4: Pass>",
+      "matched_skills": ["<skill1>", "<skill2>"],
+      "missing_skills": ["<skill1>", "<skill2>"],
+      "experience_fit": "<Overqualified/Perfect/Underqualified>",
+      "strengths": ["<strength1>", "<strength2>"],
+      "concerns": ["<concern1>"],
+      "recommendation": "<Shortlist/Phone Screen/Hold/Reject>",
+      "hire_probability": <integer 0-100>,
+      "one_liner": "<one sentence summary>"
+    }}
+  ],
+  "top_pick": "<name of top candidate>",
+  "screening_summary": "<2-3 sentence executive summary of the candidate pool>",
+  "common_gaps": ["<skill or quality missing across most candidates>"],
+  "pool_quality": "<Excellent/Good/Fair/Poor>",
+  "shortlist_count": <how many to shortlist>
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'ranked_candidates' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[BulkScreener] OpenAI failed: {e}')
+
+    ranked = []
+    for i, r in enumerate(resumes_data):
+        score = min(90, 40 + len(r.get('skills', [])) * 3)
+        ranked.append({'rank': i+1, 'candidate_index': i, 'name': r.get('name', f'Candidate {i+1}'), 'match_score': score, 'tier': 'Tier 2: Good', 'matched_skills': r.get('skills', [])[:3], 'missing_skills': [], 'experience_fit': 'Perfect', 'strengths': ['Relevant experience'], 'concerns': ['Verify skills in interview'], 'recommendation': 'Phone Screen', 'hire_probability': max(0, score - 10), 'one_liner': 'Candidate meets basic requirements for the role.'})
+    ranked.sort(key=lambda x: x['match_score'], reverse=True)
+    for i, r in enumerate(ranked):
+        r['rank'] = i + 1
+    return {'ranked_candidates': ranked, 'top_pick': ranked[0]['name'] if ranked else 'N/A', 'screening_summary': f'Screened {len(resumes_data)} candidates. Manual review recommended.', 'common_gaps': ['Verify all skills in interview'], 'pool_quality': 'Good', 'shortlist_count': max(1, len(ranked) // 3)}
+
+
+def generate_email_campaign(email_type: str, candidates: list, job_title: str, company_name: str, custom_message: str, user_id: str = None) -> dict:
+    """Generate personalized bulk email campaign for candidates."""
+    TYPE_CONTEXT = {
+        'invite': 'inviting them to interview - warm, exciting, professional',
+        'reject': 'respectfully declining their application - empathetic, encouraging, professional',
+        'follow_up': 'following up after interview - appreciative, next-steps focused',
+        'offer': 'extending a job offer - enthusiastic, clear on next steps',
+        'waitlist': 'placing them on a waitlist - honest, hopeful, appreciative'
+    }
+    context = TYPE_CONTEXT.get(email_type, 'professional communication')
+    candidate_list = '\n'.join([f"- {c.get('name','Candidate')}: {c.get('note','')}" for c in candidates[:10]])
+
+    prompt = f"""You are a professional talent acquisition specialist crafting personalized recruitment emails.
+
+Email Type: {email_type.upper()} - {context}
+Job Title: {job_title}
+Company: {company_name or 'Our Company'}
+Custom Message/Context: {custom_message or 'Standard communication'}
+Candidates:
+{candidate_list}
+
+Return JSON with EXACTLY these fields:
+{{
+  "subject_line": "<compelling subject line>",
+  "email_template": "<full email body with [CANDIDATE_NAME] placeholder, professional tone, 150-200 words>",
+  "tone_analysis": "<Warm/Professional/Empathetic/Enthusiastic>",
+  "personalization_hooks": ["<what to personalize per candidate>", "<hook2>"],
+  "best_send_time": "<e.g. Tuesday 10 AM>",
+  "expected_open_rate": "<e.g. 65-75%>",
+  "follow_up_schedule": "<when to send follow-up if no response>",
+  "do_not_say": ["<phrase to avoid>", "<phrase2>"],
+  "per_candidate_preview": [
+    {{"name": "<candidate name>", "personalized_opening": "<custom first sentence for this person>"}}
+  ],
+  "campaign_tips": ["<tip for higher response rates>", "<tip2>", "<tip3>"]
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=1500, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'email_template' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[EmailCampaign] OpenAI failed: {e}')
+
+    templates = {
+        'invite': f'Dear [CANDIDATE_NAME],\n\nWe are excited to invite you to interview for the {job_title} position at {company_name or "our company"}. Your background stood out to us and we believe you could be a great fit.\n\nPlease reply with your availability for a 30-minute call this week.\n\nBest regards,\nTalent Acquisition Team',
+        'reject': f'Dear [CANDIDATE_NAME],\n\nThank you for your interest in the {job_title} role at {company_name or "our company"}. After careful consideration, we have decided to move forward with other candidates whose experience more closely aligns with our current needs.\n\nWe appreciate your time and encourage you to apply for future openings.\n\nBest regards,\nTalent Acquisition Team',
+        'follow_up': f'Dear [CANDIDATE_NAME],\n\nThank you for your time interviewing for the {job_title} position. We are currently in the final evaluation stage and will be in touch with next steps shortly.\n\nBest regards,\nTalent Acquisition Team',
+    }
+    return {
+        'subject_line': f'Update on your {job_title} application',
+        'email_template': templates.get(email_type, templates['follow_up']),
+        'tone_analysis': 'Professional',
+        'personalization_hooks': ['Mention specific skill they highlighted', 'Reference their current company or role'],
+        'best_send_time': 'Tuesday-Thursday, 9-11 AM local time',
+        'expected_open_rate': '55-65%',
+        'follow_up_schedule': 'Send follow-up after 3 business days if no response',
+        'do_not_say': ['We regret to inform you', 'Unfortunately we cannot'],
+        'per_candidate_preview': [{'name': c.get('name', 'Candidate'), 'personalized_opening': f'Dear {c.get("name","Candidate")}, thank you for your interest in joining us.'} for c in candidates[:5]],
+        'campaign_tips': ['Personalize the subject line with their name', 'Send on Tuesday morning for highest open rates', 'Keep emails under 200 words for mobile readability']
+    }
+
+
+def analyze_candidate_sentiment(interactions: list, candidate_name: str, job_title: str, user_id: str = None) -> dict:
+    """Analyze candidate sentiment and engagement across all touchpoints."""
+    interaction_text = '\n'.join([f"- [{i.get('date','N/A')}] {i.get('type','event')}: {i.get('notes','')}" for i in interactions[:20]])
+
+    prompt = f"""You are a talent acquisition expert specializing in candidate experience and behavioral analysis.
+Analyze the engagement and sentiment of candidate: {candidate_name}
+Role they applied for: {job_title}
+
+Interaction History:
+{interaction_text if interaction_text else 'No interactions recorded yet - analyze based on typical patterns'}
+
+Return JSON with EXACTLY these fields:
+{{
+  "overall_sentiment": "<Very Positive / Positive / Neutral / Negative / Very Negative>",
+  "engagement_score": <integer 0-100>,
+  "interest_level": "<Highly Interested / Interested / Lukewarm / Disengaged>",
+  "sentiment_trend": "<Improving / Stable / Declining>",
+  "sentiment_timeline": [
+    {{"touchpoint": "<event type>", "sentiment": "<Positive/Neutral/Negative>", "score": <0-100>, "notes": "<insight>"}}
+  ],
+  "positive_signals": ["<signal1>", "<signal2>"],
+  "risk_flags": ["<flag1>", "<flag2>"],
+  "dropout_risk": "<Low/Medium/High>",
+  "predicted_outcome": "<Likely to Accept / Undecided / Likely to Decline / May Ghost>",
+  "recommended_action": "<specific next action to take>",
+  "urgency_level": "<Immediate / This Week / Standard>",
+  "talking_points": ["<what to say in next interaction>", "<point2>"],
+  "re_engagement_strategy": "<if disengaged, how to re-engage them>"
+}}"""
+
+    try:
+        result = _call_openai(prompt, max_tokens=1200, user_id=user_id)
+        data = _strip_json(result)
+        if data and 'overall_sentiment' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[SentimentTracker] OpenAI failed: {e}')
+
+    return {
+        'overall_sentiment': 'Neutral',
+        'engagement_score': 55,
+        'interest_level': 'Interested',
+        'sentiment_trend': 'Stable',
+        'sentiment_timeline': [{'touchpoint': 'Application', 'sentiment': 'Positive', 'score': 70, 'notes': 'Applied proactively'}],
+        'positive_signals': ['Applied on time', 'Responded to communications'],
+        'risk_flags': ['Limited interaction data available'],
+        'dropout_risk': 'Medium',
+        'predicted_outcome': 'Undecided',
+        'recommended_action': 'Schedule a check-in call to gauge interest level',
+        'urgency_level': 'This Week',
+        'talking_points': ['Ask about their current job search timeline', 'Highlight role benefits', 'Address any concerns they may have'],
+        're_engagement_strategy': 'Send a personalized email highlighting why they are a strong fit for this role.'
+    }

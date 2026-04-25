@@ -8,6 +8,7 @@ from accounts.views import (
     InterviewPrepPlanView, InterviewPrepQuizView, InterviewPrepReportView,
     CandidateComparisonView, BiasDetectorView, ReferenceCheckView,
     OfferPredictorView, FunnelAnalyzerView, TeamFitView, InterviewerCoachView,
+    AnxietyCoachView, BulkResumeScreenerView, EmailCampaignView, SentimentTrackerView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -65,4 +66,10 @@ urlpatterns = [
     path('hr/funnel-analyzer/', FunnelAnalyzerView.as_view(), name='hr-funnel-analyzer'),
     path('hr/team-fit/', TeamFitView.as_view(), name='hr-team-fit'),
     path('hr/interviewer-coach/', InterviewerCoachView.as_view(), name='hr-interviewer-coach'),
+
+    # Feature Set 3
+    path('anxiety-coach/', AnxietyCoachView.as_view(), name='anxiety-coach'),
+    path('hr/bulk-resume-screen/', BulkResumeScreenerView.as_view(), name='hr-bulk-resume-screen'),
+    path('hr/email-campaign/', EmailCampaignView.as_view(), name='hr-email-campaign'),
+    path('hr/sentiment-tracker/', SentimentTrackerView.as_view(), name='hr-sentiment-tracker'),
 ]

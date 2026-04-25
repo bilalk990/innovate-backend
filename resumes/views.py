@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from resumes.models import Resume
+from core.openai_client import review_resume_ats
 
 logger = logging.getLogger('innovaite')
 
@@ -530,3 +531,32 @@ class GenerateAdvancedResumeView(APIView):
             if 'QUOTA' in error_msg or 'KEY' in error_msg:
                 return Response({'error': 'AI service temporarily unavailable.'}, status=503)
             return Response({'error': f'Advanced resume generation failed: {str(e)}'}, status=500)
+
+
+class ATSReviewView(APIView):
+    """POST /resumes/ats-review/ — AI ATS score + weak points + fix suggestions."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            resume_id = request.data.get('resume_id')
+            if not resume_id:
+                # Use active resume
+                resumes = Resume.objects.filter(user_id=str(request.user.id), is_active=True)
+                resume = resumes.first()
+            else:
+                resume = Resume.objects.get(id=resume_id, user_id=str(request.user.id))
+
+            if not resume:
+                return Response({'error': 'No resume found. Upload a resume first.'}, status=404)
+
+            if not resume.parsed_data or resume.parse_status not in ['parsed', 'completed']:
+                return Response({'error': 'Resume is still being analyzed. Please wait for parsing to complete.'}, status=400)
+
+            result = review_resume_ats(resume.parsed_data, user_id=str(request.user.id))
+            return Response(result)
+        except Resume.DoesNotExist:
+            return Response({'error': 'Resume not found.'}, status=404)
+        except Exception as e:
+            logger.error(f'[ATSReview] Error: {e}')
+            return Response({'error': f'ATS review failed: {str(e)}'}, status=500)

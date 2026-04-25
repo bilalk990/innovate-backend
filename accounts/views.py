@@ -994,3 +994,140 @@ class InterviewerCoachView(APIView):
         except Exception as e:
             logger.error(f'[InterviewerCoach] Failed: {e}')
             return Response({'error': f'Coaching analysis failed: {str(e)}'}, status=500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURE SET 3 VIEWS — Anxiety Coach, Bulk Screener, Email Campaign, Sentiment
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AnxietyCoachView(APIView):
+    """POST /auth/anxiety-coach/ — Personalized pre-interview anxiety coaching."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_anxiety_coaching
+        role = request.data.get('role', 'Software Engineer')
+        experience_level = request.data.get('experience_level', 'Mid-level')
+        concerns = request.data.get('concerns', '')
+        try:
+            result = generate_anxiety_coaching(role, experience_level, concerns, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[AnxietyCoach] Failed: {e}')
+            return Response({'error': f'Coaching generation failed: {str(e)}'}, status=500)
+
+
+class BulkResumeScreenerView(APIView):
+    """POST /auth/hr/bulk-resume-screen/ — Screen + rank multiple candidates against JD."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import screen_resumes_bulk
+        from resumes.models import Resume
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        jd_text = request.data.get('jd_text', '')
+        job_title = request.data.get('job_title', 'Open Position')
+        candidate_ids = request.data.get('candidate_ids', [])
+
+        if not jd_text.strip():
+            return Response({'error': 'Job description is required.'}, status=400)
+        if not candidate_ids:
+            return Response({'error': 'Provide at least 1 candidate_id.'}, status=400)
+
+        resumes_data = []
+        for cid in candidate_ids[:15]:
+            try:
+                resume = Resume.objects.filter(user_id=str(cid), is_active=True).first()
+                if resume and resume.parsed_data:
+                    pd = resume.parsed_data
+                    resumes_data.append({
+                        'name': pd.get('name', f'Candidate {cid[:6]}'),
+                        'skills': pd.get('skills', []),
+                        'experience_years': pd.get('total_experience_years', 0),
+                        'education_level': pd.get('education', [{}])[0].get('degree', 'Unknown') if pd.get('education') else 'Unknown',
+                        'summary': pd.get('summary', ''),
+                        'candidate_id': str(cid),
+                    })
+                else:
+                    resumes_data.append({'name': f'Candidate {str(cid)[:6]}', 'skills': [], 'experience_years': 0, 'education_level': 'Unknown', 'summary': 'No resume uploaded', 'candidate_id': str(cid)})
+            except Exception:
+                resumes_data.append({'name': f'Candidate {str(cid)[:6]}', 'skills': [], 'experience_years': 0, 'education_level': 'Unknown', 'summary': 'Resume unavailable', 'candidate_id': str(cid)})
+
+        try:
+            result = screen_resumes_bulk(resumes_data, jd_text, job_title, user_id=str(request.user.id))
+            # Attach candidate_ids back to ranked results
+            for rc in result.get('ranked_candidates', []):
+                idx = rc.get('candidate_index', 0)
+                if idx < len(resumes_data):
+                    rc['candidate_id'] = resumes_data[idx].get('candidate_id', '')
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[BulkScreener] Failed: {e}')
+            return Response({'error': f'Bulk screening failed: {str(e)}'}, status=500)
+
+
+class EmailCampaignView(APIView):
+    """POST /auth/hr/email-campaign/ — Generate personalized bulk email campaign."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_email_campaign
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        email_type = request.data.get('email_type', 'follow_up')
+        job_title = request.data.get('job_title', 'Open Position')
+        company_name = request.data.get('company_name', '')
+        custom_message = request.data.get('custom_message', '')
+        candidates_raw = request.data.get('candidates', [])
+
+        if not candidates_raw:
+            return Response({'error': 'Provide at least 1 candidate.'}, status=400)
+
+        # Enrich candidate data from DB if ids provided
+        candidates = []
+        for c in candidates_raw[:20]:
+            candidates.append({'name': c.get('name', 'Candidate'), 'note': c.get('note', '')})
+
+        try:
+            result = generate_email_campaign(email_type, candidates, job_title, company_name, custom_message, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[EmailCampaign] Failed: {e}')
+            return Response({'error': f'Email campaign generation failed: {str(e)}'}, status=500)
+
+
+class SentimentTrackerView(APIView):
+    """POST /auth/hr/sentiment-tracker/ — Analyze candidate sentiment + engagement."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import analyze_candidate_sentiment
+        from accounts.models import User
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        candidate_id = request.data.get('candidate_id', '')
+        job_title = request.data.get('job_title', 'Open Position')
+        interactions = request.data.get('interactions', [])
+
+        candidate_name = 'Candidate'
+        if candidate_id:
+            try:
+                cand = User.objects.get(id=candidate_id)
+                candidate_name = cand.name or cand.email
+            except Exception:
+                pass
+
+        try:
+            result = analyze_candidate_sentiment(interactions, candidate_name, job_title, user_id=str(request.user.id))
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[SentimentTracker] Failed: {e}')
+            return Response({'error': f'Sentiment analysis failed: {str(e)}'}, status=500)
+            return Response({'error': f'Coaching analysis failed: {str(e)}'}, status=500)
