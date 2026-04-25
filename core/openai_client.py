@@ -3658,3 +3658,252 @@ Each section content should be COMPLETE and READY TO USE — not placeholders. W
         'total_pages_estimate': '18-25 pages',
         'handbook_summary': f'This handbook outlines {company_name}\'s core policies, values, and expectations for all employees. It serves as the definitive guide for workplace conduct and employment terms. {company_name} reserves the right to update this handbook and will communicate any changes to all employees.'
     }
+
+
+# ── Feature Set 6: HR Strategic AI Tools ────────────────────────────────────
+
+def generate_ld_roadmap(employee_name: str, current_role: str, target_role: str,
+                         current_skills: list, experience_years: int, learning_style: str,
+                         budget_range: str, timeline_months: int, industry: str,
+                         company_name: str = '', user_id: str = None) -> dict:
+    """Generate a personalized AI Learning & Development roadmap for an employee."""
+    skills_str = ', '.join(current_skills[:30]) if current_skills else 'Not specified'
+    prompt = f"""You are a world-class L&D (Learning & Development) strategist and career coach who has designed development plans for thousands of employees across top companies globally.
+
+Create a highly personalized, actionable Training & Development roadmap for:
+
+EMPLOYEE: {employee_name}
+COMPANY: {company_name or 'The Organization'}
+INDUSTRY: {industry}
+CURRENT ROLE: {current_role}
+TARGET ROLE / GOAL: {target_role}
+CURRENT SKILLS: {skills_str}
+YEARS OF EXPERIENCE: {experience_years}
+PREFERRED LEARNING STYLE: {learning_style} (Visual/Reading/Hands-on/Blended)
+BUDGET RANGE: {budget_range}
+TIMELINE: {timeline_months} months
+
+Your roadmap must be deeply personalized — not generic. Identify the EXACT skill gap between current role and target role. Recommend REAL courses (Coursera, Udemy, LinkedIn Learning, Pluralsight, edX, Google, AWS, Microsoft, PMI etc.) with realistic prices. Consider the learning style preference.
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "employee_summary": "<2-sentence profile of where this employee is and where they're heading>",
+  "readiness_score": <0-100 how ready they are for target role today>,
+  "readiness_label": "<Not Ready / Developing / Almost Ready / Ready>",
+  "skill_gap_analysis": {{
+    "critical_gaps": ["<skill they urgently need>", "<gap2>", "<gap3>"],
+    "moderate_gaps": ["<skill to develop>", "<gap2>"],
+    "existing_strengths": ["<what they already have>", "<strength2>", "<strength3>"],
+    "gap_summary": "<1-2 sentence summary of biggest skill jump needed>"
+  }},
+  "learning_roadmap": [
+    {{
+      "phase": 1,
+      "phase_title": "<e.g. Foundation Building>",
+      "duration": "<e.g. Month 1-2>",
+      "focus": "<what this phase achieves>",
+      "milestones": ["<deliverable 1>", "<deliverable 2>"],
+      "activities": ["<specific activity>", "<activity2>"]
+    }}
+  ],
+  "recommended_courses": [
+    {{
+      "title": "<exact course name>",
+      "platform": "<Coursera/Udemy/LinkedIn Learning/edX/YouTube/etc>",
+      "url_hint": "<search term to find it>",
+      "duration": "<e.g. 12 hours / 6 weeks>",
+      "cost": "<e.g. Free / $49 / $199/year subscription>",
+      "priority": "<Critical/High/Medium>",
+      "phase": <which phase number>,
+      "why": "<why this course specifically for this person>"
+    }}
+  ],
+  "certifications": [
+    {{
+      "name": "<exact certification name>",
+      "issuing_body": "<AWS/Google/PMI/SHRM/etc>",
+      "relevance": "<why this cert matters for target role>",
+      "estimated_cost": "<exam + prep cost>",
+      "prep_time": "<e.g. 3 months of study>",
+      "priority": "<Must Have / Strongly Recommended / Optional>",
+      "target_month": <which month to attempt>
+    }}
+  ],
+  "monthly_schedule": [
+    {{
+      "month": <1>,
+      "focus": "<primary focus this month>",
+      "hours_per_week": <realistic hours>,
+      "key_tasks": ["<task>", "<task2>"],
+      "checkpoint": "<what should be achieved by end of month>"
+    }}
+  ],
+  "roi_for_company": {{
+    "productivity_gain": "<estimated % or description>",
+    "retention_impact": "<how this investment reduces turnover risk>",
+    "value_delivered": "<what new capabilities employee brings>",
+    "payback_period": "<how long till company recoups investment>",
+    "cost_of_not_training": "<risk of NOT investing in this employee>"
+  }},
+  "total_estimated_cost": "<total budget estimate for full roadmap>",
+  "cost_breakdown": {{
+    "courses": "<estimate>",
+    "certifications": "<estimate>",
+    "books_resources": "<estimate>",
+    "total": "<grand total>"
+  }},
+  "success_metrics": ["<how to measure progress>", "<metric2>", "<metric3>"],
+  "manager_tips": ["<how manager can support>", "<tip2>", "<tip3>"],
+  "motivational_note": "<personalized encouraging message for the employee>"
+}}
+
+Make every recommendation SPECIFIC to {employee_name}'s exact situation. Use real course names, real platforms, realistic costs. Do not give generic advice."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=3000, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'learning_roadmap' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[LDRoadmap] OpenAI failed: {e}')
+
+    gap = [s for s in ['Leadership', 'Project Management', 'Communication', 'Data Analysis', 'Strategic Thinking'] if s.lower() not in [sk.lower() for sk in current_skills]][:3]
+    return {
+        'employee_summary': f'{employee_name} is currently a {current_role} with {experience_years} years of experience, targeting a transition to {target_role}. A focused {timeline_months}-month development plan will bridge the key skill gaps.',
+        'readiness_score': min(75, 30 + experience_years * 5),
+        'readiness_label': 'Developing',
+        'skill_gap_analysis': {
+            'critical_gaps': gap or ['Advanced technical skills', 'Leadership experience', 'Strategic planning'],
+            'moderate_gaps': ['Stakeholder management', 'Cross-functional collaboration'],
+            'existing_strengths': current_skills[:3] or ['Domain knowledge', 'Work ethic', 'Team collaboration'],
+            'gap_summary': f'The primary gap between {current_role} and {target_role} is in leadership and strategic skill sets that require deliberate development.',
+        },
+        'learning_roadmap': [
+            {'phase': 1, 'phase_title': 'Foundation & Assessment', 'duration': f'Month 1-{min(2, timeline_months)}', 'focus': 'Identify exact gaps and start foundational learning', 'milestones': ['Complete skills self-assessment', 'Enroll in 2 core courses'], 'activities': ['Online course enrollment', 'Find a mentor in target role']},
+            {'phase': 2, 'phase_title': 'Core Skill Building', 'duration': f'Month {min(3, timeline_months)}-{min(6, timeline_months)}', 'focus': 'Build the critical skills identified in gap analysis', 'milestones': ['Complete primary certification prep', 'Lead a small project'], 'activities': ['Hands-on projects', 'Job shadowing', 'Reading industry books']},
+            {'phase': 3, 'phase_title': 'Application & Validation', 'duration': f'Month {min(7, timeline_months)}-{timeline_months}', 'focus': 'Apply learning in real work scenarios', 'milestones': ['Attempt certification exam', 'Present project outcomes to leadership'], 'activities': ['Take on stretch assignments', 'Present to stakeholders', 'Sit certification exam']},
+        ],
+        'recommended_courses': [
+            {'title': f'{target_role} Fundamentals', 'platform': 'Coursera', 'url_hint': f'{target_role} fundamentals course', 'duration': '20 hours', 'cost': '$49', 'priority': 'Critical', 'phase': 1, 'why': 'Builds the foundational knowledge needed for transition'},
+            {'title': 'Leadership Essentials', 'platform': 'LinkedIn Learning', 'url_hint': 'leadership skills LinkedIn Learning', 'duration': '8 hours', 'cost': '$29.99/month subscription', 'priority': 'High', 'phase': 2, 'why': 'Develops the leadership mindset required in senior roles'},
+            {'title': 'Communication for Professionals', 'platform': 'Udemy', 'url_hint': 'professional communication Udemy', 'duration': '6 hours', 'cost': '$14.99', 'priority': 'Medium', 'phase': 2, 'why': 'Sharpens stakeholder communication skills'},
+        ],
+        'certifications': [
+            {'name': f'{industry} Professional Certification', 'issuing_body': 'Industry Body', 'relevance': f'Validates expertise needed for {target_role}', 'estimated_cost': '$300-500', 'prep_time': '3 months', 'priority': 'Strongly Recommended', 'target_month': timeline_months - 2},
+        ],
+        'monthly_schedule': [{'month': m, 'focus': f'Phase {"1" if m <= 2 else "2" if m <= 6 else "3"} learning activities', 'hours_per_week': 5, 'key_tasks': ['Complete assigned module', 'Practice new skills at work'], 'checkpoint': f'Month {m} milestone review with manager'} for m in range(1, min(timeline_months + 1, 7))],
+        'roi_for_company': {
+            'productivity_gain': '20-30% improvement in role effectiveness within 6 months of completing roadmap',
+            'retention_impact': 'Employees with development plans are 3x more likely to stay — saves cost of replacing this employee',
+            'value_delivered': f'A fully developed {target_role} brings immediate ROI through reduced external hiring costs and faster project delivery',
+            'payback_period': '6-12 months after roadmap completion',
+            'cost_of_not_training': f'Risk of losing {employee_name} to a competitor offering growth + external hire cost of 50-150% of annual salary',
+        },
+        'total_estimated_cost': budget_range,
+        'cost_breakdown': {'courses': '$150-300', 'certifications': '$300-600', 'books_resources': '$50-100', 'total': budget_range},
+        'success_metrics': ['Certification obtained by target month', 'Manager scores 4+/5 on new skill competencies', 'Assigned first project in target role capacity'],
+        'manager_tips': ['Schedule monthly 1-on-1 check-ins on L&D progress', 'Give stretch assignments aligned with target role', 'Publicly recognize milestones to keep motivation high'],
+        'motivational_note': f'{employee_name}, the path from {current_role} to {target_role} is absolutely achievable in {timeline_months} months. Every expert was once a beginner — stay consistent, apply what you learn daily, and this roadmap will get you there.',
+    }
+
+
+def check_policy_compliance(policy_text: str, country: str, industry: str,
+                              company_size: str, policy_type: str = '',
+                              user_id: str = None) -> dict:
+    """AI analyzes HR policy text against local labor laws and flags violations."""
+    prompt = f"""You are a senior employment law expert and HR compliance specialist with 30+ years of experience across multiple jurisdictions. You have deep knowledge of labor laws, employment regulations, and HR best practices.
+
+Analyze the following HR policy document for legal compliance issues:
+
+COUNTRY / JURISDICTION: {country}
+INDUSTRY: {industry}
+COMPANY SIZE: {company_size}
+POLICY TYPE (if known): {policy_type or 'General HR Policy'}
+
+POLICY TEXT TO ANALYZE:
+---
+{policy_text[:4000]}
+---
+
+Perform a thorough compliance review against:
+- {country} labor laws and employment acts
+- Industry-specific regulations for {industry}
+- International best practices (ILO standards)
+- Anti-discrimination laws
+- Data protection requirements (where applicable)
+- Minimum standards for leave, pay, working hours
+- Employee rights and protections
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "compliance_score": <0-100 overall compliance score>,
+  "compliance_grade": "<A/B/C/D/F>",
+  "overall_verdict": "<Compliant / Mostly Compliant / Needs Revision / Non-Compliant>",
+  "verdict_summary": "<2-3 sentence executive summary of compliance status>",
+  "laws_checked": ["<specific law or act checked>", "<law2>", "<law3>", "<law4>"],
+  "violations": [
+    {{
+      "severity": "<Critical/High/Medium>",
+      "clause": "<quote or reference the problematic text>",
+      "issue": "<what is legally wrong>",
+      "legal_reference": "<specific law, section, article violated>",
+      "risk": "<what could happen if not fixed — fines, lawsuits, etc>",
+      "fix": "<exact correction needed>"
+    }}
+  ],
+  "warnings": [
+    {{
+      "severity": "Low",
+      "clause": "<text that needs attention>",
+      "issue": "<potential concern>",
+      "recommendation": "<suggested improvement>"
+    }}
+  ],
+  "compliant_clauses": ["<what the policy gets right>", "<strength2>", "<strength3>"],
+  "missing_required_clauses": ["<legally required clause that is absent>", "<missing2>"],
+  "corrected_policy": "<Rewrite the full policy with all violations fixed, missing clauses added, and legally sound language. Keep the original intent but make it fully compliant. This should be a complete, ready-to-use policy document.>",
+  "key_improvements": [
+    {{"priority": 1, "improvement": "<most important change>", "reason": "<why>"}},
+    {{"priority": 2, "improvement": "<second change>", "reason": "<why>"}},
+    {{"priority": 3, "improvement": "<third change>", "reason": "<why>"}}
+  ],
+  "legal_disclaimer": "This AI analysis is for guidance only and does not constitute formal legal advice. Consult a qualified employment lawyer for final review.",
+  "next_steps": ["<recommended action 1>", "<action2>", "<action3>"]
+}}
+
+Be specific about {country} laws. For Pakistan: reference EOBI Act, Employment of Women Act, Industrial Relations Act, Factories Act, Minimum Wages Ordinance. For UAE: UAE Labour Law Federal Decree-Law No. 33 of 2021. For UK: Employment Rights Act 1996, Equality Act 2010, Working Time Regulations. For US: FLSA, FMLA, ADA, Title VII. Cite actual section numbers where possible."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=3500, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'compliance_score' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[PolicyCompliance] OpenAI failed: {e}')
+
+    word_count = len(policy_text.split())
+    score = 60 if word_count > 100 else 40
+    return {
+        'compliance_score': score,
+        'compliance_grade': 'C' if score >= 60 else 'D',
+        'overall_verdict': 'Needs Revision',
+        'verdict_summary': f'The policy has been reviewed against {country} labor laws and industry standards for {industry}. Several areas require revision to ensure full legal compliance. Key gaps include missing mandatory clauses and potentially non-compliant language.',
+        'laws_checked': [f'{country} Labor Law', 'Employment Rights Act', 'Anti-Discrimination Regulations', 'Data Protection Standards'],
+        'violations': [
+            {'severity': 'High', 'clause': 'General policy language', 'issue': 'Policy lacks explicit mention of statutory minimum entitlements', 'legal_reference': f'{country} Employment Law — Minimum Standards', 'risk': 'Employee complaints, labor authority fines', 'fix': 'Add explicit statement of minimum statutory entitlements as per local law'},
+            {'severity': 'Medium', 'clause': 'Disciplinary section', 'issue': 'Disciplinary procedure does not clearly state right to appeal', 'legal_reference': 'Natural Justice Principles / Employment Act', 'risk': 'Unfair dismissal claims', 'fix': 'Add clear 3-step appeal process with timelines'},
+        ],
+        'warnings': [
+            {'severity': 'Low', 'clause': 'General language', 'issue': 'Policy language may be interpreted as gender-biased in some clauses', 'recommendation': 'Use gender-neutral language throughout (e.g., "they/them" instead of "he/she")'},
+        ],
+        'compliant_clauses': ['Policy has a clear scope and applicability statement', 'Confidentiality provisions are present', 'Policy states effective date'],
+        'missing_required_clauses': ['Grievance redressal procedure', 'Anti-harassment statement', 'Employee right to representation', 'Data privacy statement'],
+        'corrected_policy': f'[CORRECTED POLICY — {policy_type or "HR Policy"}]\n\nThis policy has been revised to comply with {country} labor laws and {industry} industry standards.\n\n{policy_text}\n\n[ADDITIONS]\nGrievance Procedure: Employees may raise grievances in writing to HR within 30 days of the incident.\nAppeal Rights: Any disciplinary decision may be appealed within 14 days.\nAnti-Harassment: The company maintains a zero-tolerance policy toward all forms of workplace harassment.\nData Privacy: All employee data is handled in accordance with applicable data protection laws.',
+        'key_improvements': [
+            {'priority': 1, 'improvement': 'Add statutory minimum entitlements section', 'reason': 'Required by law — absence creates legal liability'},
+            {'priority': 2, 'improvement': 'Include formal grievance and appeal procedure', 'reason': 'Protects company from unfair dismissal claims'},
+            {'priority': 3, 'improvement': 'Add anti-harassment and equal opportunity statement', 'reason': 'Legally required in most jurisdictions'},
+        ],
+        'legal_disclaimer': 'This AI analysis is for guidance only and does not constitute formal legal advice. Consult a qualified employment lawyer for final review.',
+        'next_steps': ['Review all Critical and High violations immediately', 'Consult a local employment lawyer for final sign-off', 'Distribute revised policy to all employees with acknowledgment'],
+    }

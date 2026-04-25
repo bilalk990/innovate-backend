@@ -11,6 +11,7 @@ from accounts.views import (
     AnxietyCoachView, BulkResumeScreenerView, EmailCampaignView, SentimentTrackerView,
     CandidateDNAView, TalentRediscoveryView, InterviewQualityIntelligenceView,
     HRDocumentGeneratorView, EmployeeHandbookBuilderView,
+    LDRoadmapView, PolicyComplianceView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -83,4 +84,8 @@ urlpatterns = [
     # Feature Set 5 — HR Utility AI Tools
     path('hr/generate-document/', HRDocumentGeneratorView.as_view(), name='hr-generate-document'),
     path('hr/handbook-builder/', EmployeeHandbookBuilderView.as_view(), name='hr-handbook-builder'),
+
+    # Feature Set 6 — HR Strategic AI Tools
+    path('hr/ld-roadmap/', LDRoadmapView.as_view(), name='hr-ld-roadmap'),
+    path('hr/policy-compliance/', PolicyComplianceView.as_view(), name='hr-policy-compliance'),
 ]

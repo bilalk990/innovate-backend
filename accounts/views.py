@@ -1440,3 +1440,91 @@ class EmployeeHandbookBuilderView(APIView):
         except Exception as e:
             logger.error(f'[HandbookBuilder] Failed: {e}')
             return Response({'error': f'Handbook generation failed: {str(e)}'}, status=500)
+
+
+class LDRoadmapView(APIView):
+    """POST /auth/hr/ld-roadmap/ — Generate personalized L&D training roadmap."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_ld_roadmap
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        employee_name = request.data.get('employee_name', '').strip()
+        current_role = request.data.get('current_role', '').strip()
+        target_role = request.data.get('target_role', '').strip()
+        current_skills_raw = request.data.get('current_skills', '')
+        experience_years = int(request.data.get('experience_years', 0) or 0)
+        learning_style = request.data.get('learning_style', 'Blended').strip()
+        budget_range = request.data.get('budget_range', '$200-500').strip()
+        timeline_months = int(request.data.get('timeline_months', 6) or 6)
+        industry = request.data.get('industry', '').strip()
+        company_name = request.data.get('company_name', '').strip()
+
+        if not employee_name:
+            return Response({'error': 'employee_name is required.'}, status=400)
+        if not current_role:
+            return Response({'error': 'current_role is required.'}, status=400)
+        if not target_role:
+            return Response({'error': 'target_role is required.'}, status=400)
+
+        # Parse skills — accept comma-separated string or list
+        if isinstance(current_skills_raw, list):
+            current_skills = [s.strip() for s in current_skills_raw if s.strip()]
+        else:
+            current_skills = [s.strip() for s in str(current_skills_raw).split(',') if s.strip()]
+
+        try:
+            result = generate_ld_roadmap(
+                employee_name=employee_name,
+                current_role=current_role,
+                target_role=target_role,
+                current_skills=current_skills,
+                experience_years=experience_years,
+                learning_style=learning_style,
+                budget_range=budget_range,
+                timeline_months=min(timeline_months, 24),
+                industry=industry or 'General',
+                company_name=company_name,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[LDRoadmap] Failed: {e}')
+            return Response({'error': f'Roadmap generation failed: {str(e)}'}, status=500)
+
+
+class PolicyComplianceView(APIView):
+    """POST /auth/hr/policy-compliance/ — AI compliance check of HR policy text."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import check_policy_compliance
+
+        if request.user.role not in ['recruiter', 'admin']:
+            return Response({'error': 'Recruiter access required.'}, status=403)
+
+        policy_text = request.data.get('policy_text', '').strip()
+        country = request.data.get('country', 'Pakistan').strip()
+        industry = request.data.get('industry', 'General').strip()
+        company_size = request.data.get('company_size', '50-200 employees').strip()
+        policy_type = request.data.get('policy_type', '').strip()
+
+        if not policy_text or len(policy_text) < 50:
+            return Response({'error': 'Please provide the full policy text (minimum 50 characters).'}, status=400)
+
+        try:
+            result = check_policy_compliance(
+                policy_text=policy_text,
+                country=country,
+                industry=industry,
+                company_size=company_size,
+                policy_type=policy_type,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PolicyCompliance] Failed: {e}')
+            return Response({'error': f'Compliance check failed: {str(e)}'}, status=500)
