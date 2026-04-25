@@ -12,6 +12,7 @@ from accounts.views import (
     CandidateDNAView, TalentRediscoveryView, InterviewQualityIntelligenceView,
     HRDocumentGeneratorView, EmployeeHandbookBuilderView,
     LDRoadmapView, PolicyComplianceView,
+    CoverLetterView, JobMatchAnalyzerView, SelfIntroCoachView, PortfolioSuggesterView,
 )
 from accounts.google_views import GoogleAuthURLView, GoogleCallbackView
 from accounts.mfa_views import (
@@ -88,4 +89,10 @@ urlpatterns = [
     # Feature Set 6 — HR Strategic AI Tools
     path('hr/ld-roadmap/', LDRoadmapView.as_view(), name='hr-ld-roadmap'),
     path('hr/policy-compliance/', PolicyComplianceView.as_view(), name='hr-policy-compliance'),
+
+    # Feature Set 7 — Candidate Career AI Tools
+    path('cover-letter/', CoverLetterView.as_view(), name='cover-letter'),
+    path('job-match/', JobMatchAnalyzerView.as_view(), name='job-match'),
+    path('self-intro/', SelfIntroCoachView.as_view(), name='self-intro'),
+    path('portfolio-advisor/', PortfolioSuggesterView.as_view(), name='portfolio-advisor'),
 ]

@@ -3907,3 +3907,325 @@ Be specific about {country} laws. For Pakistan: reference EOBI Act, Employment o
         'legal_disclaimer': 'This AI analysis is for guidance only and does not constitute formal legal advice. Consult a qualified employment lawyer for final review.',
         'next_steps': ['Review all Critical and High violations immediately', 'Consult a local employment lawyer for final sign-off', 'Distribute revised policy to all employees with acknowledgment'],
     }
+
+
+# ── Feature Set 7: Candidate AI Career Tools ────────────────────────────────
+
+def generate_cover_letter(job_title: str, company_name: str, jd_text: str,
+                           candidate_name: str, candidate_skills: list,
+                           experience_summary: str, tone: str = 'Professional',
+                           user_id: str = None) -> dict:
+    """Generate a personalized, tailored cover letter for a specific job."""
+    skills_str = ', '.join(candidate_skills[:25]) if candidate_skills else 'various professional skills'
+    prompt = f"""You are a world-class career coach and professional writer who has helped thousands of candidates land jobs at top companies.
+
+Write a highly personalized, compelling cover letter for:
+
+CANDIDATE: {candidate_name}
+TARGET ROLE: {job_title}
+TARGET COMPANY: {company_name or 'the company'}
+TONE: {tone}
+CANDIDATE SKILLS: {skills_str}
+EXPERIENCE SUMMARY: {experience_summary or 'Experienced professional seeking new opportunities'}
+
+JOB DESCRIPTION:
+---
+{jd_text[:3000]}
+---
+
+INSTRUCTIONS:
+- Extract 3-4 key requirements from the JD and directly address each one
+- Weave candidate's specific skills into the narrative — not just list them
+- Show genuine enthusiasm for THIS specific company (not generic)
+- Use powerful action verbs and quantify impact where possible
+- Keep it to 3 focused paragraphs — not too long, not too short
+- Match the {tone} tone throughout
+- Make the opening line instantly grab attention — no "I am writing to apply for..."
+- End with a confident, specific call to action
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "subject_line": "<email subject line for this application>",
+  "cover_letter": "<complete 3-paragraph cover letter, ready to send. Use \\n\\n between paragraphs. Include proper salutation and closing.>",
+  "word_count": <approximate word count>,
+  "tone_used": "<Professional/Enthusiastic/Executive/Creative>",
+  "keywords_used": ["<JD keyword woven in>", "<keyword2>", "<keyword3>", "<keyword4>", "<keyword5>"],
+  "jd_requirements_addressed": ["<requirement from JD that was addressed>", "<req2>", "<req3>"],
+  "opening_hook": "<the first sentence — what makes it grab attention>",
+  "strength_of_letter": "<what makes this letter strong for this specific job>",
+  "customization_tips": ["<how to personalize further>", "<tip2>", "<tip3>"],
+  "alternative_opening": "<an alternative powerful first line if they want to change it>",
+  "follow_up_tip": "<when and how to follow up after sending>"
+}}
+
+Write the actual full letter — personalized for {candidate_name} applying to {job_title} at {company_name or 'this company'}. Make it feel human and genuine, not templated."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'cover_letter' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[CoverLetter] OpenAI failed: {e}')
+
+    return {
+        'subject_line': f'Application for {job_title} Position — {candidate_name}',
+        'cover_letter': f"""Dear Hiring Manager,
+
+Having followed {company_name or "your company"}'s journey in the industry, I was immediately drawn to the {job_title} opportunity. With my background in {skills_str[:100]} and a proven track record of delivering results, I am confident I can make an immediate and lasting contribution to your team.
+
+{experience_summary or f"Throughout my career, I have developed strong expertise in {skills_str[:150]}. I have consistently delivered results by combining technical proficiency with a collaborative approach and a commitment to continuous improvement."}
+
+I would welcome the opportunity to discuss how my experience aligns with your team's goals. I am available at your earliest convenience and look forward to the possibility of contributing to {company_name or "your organization"}'s continued success.
+
+Warm regards,
+{candidate_name}""",
+        'word_count': 120,
+        'tone_used': tone,
+        'keywords_used': candidate_skills[:5],
+        'jd_requirements_addressed': ['Relevant technical skills', 'Team collaboration', 'Results orientation'],
+        'opening_hook': f"Having followed {company_name or 'your company'}'s journey, I was immediately drawn to the {job_title} opportunity.",
+        'strength_of_letter': 'Directly connects candidate experience to the role requirements.',
+        'customization_tips': ['Add a specific company achievement you admire', 'Mention a recent news story about the company', 'Quantify a specific achievement from your experience'],
+        'alternative_opening': f"In {job_title} roles, results speak louder than credentials — here's why {candidate_name} delivers both.",
+        'follow_up_tip': 'Follow up via email or LinkedIn 5-7 business days after applying if you haven\'t heard back.',
+    }
+
+
+def analyze_job_match(jd_text: str, candidate_skills: list, experience_summary: str,
+                       education: str, target_role: str = '', user_id: str = None) -> dict:
+    """Deep analysis of how well a candidate matches a specific job description."""
+    skills_str = ', '.join(candidate_skills[:30]) if candidate_skills else 'Not specified'
+    prompt = f"""You are an expert talent acquisition specialist and career coach with 20+ years of experience evaluating candidate-job fit.
+
+Perform a deep, honest match analysis between this candidate and job description:
+
+CANDIDATE PROFILE:
+- Skills: {skills_str}
+- Experience Summary: {experience_summary or 'Not provided'}
+- Education: {education or 'Not specified'}
+- Target Role: {target_role or 'Not specified'}
+
+JOB DESCRIPTION:
+---
+{jd_text[:3500]}
+---
+
+Analyze honestly and specifically. Don't be overly optimistic OR pessimistic. Be a trusted advisor.
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "match_score": <0-100 overall match percentage>,
+  "match_label": "<Perfect Fit / Strong Match / Good Match / Partial Match / Low Match>",
+  "match_summary": "<2-3 sentence honest assessment of fit — what makes them a good/poor match>",
+  "matched_skills": ["<skill candidate has that JD requires>", "<skill2>", "<skill3>"],
+  "missing_skills": ["<skill JD requires that candidate lacks>", "<missing2>", "<missing3>"],
+  "partial_skills": [
+    {{"skill": "<skill they partially have>", "gap": "<what specifically they need to deepen>"}}
+  ],
+  "experience_match": {{
+    "score": <0-100>,
+    "assessment": "<does their experience level match what JD needs?>",
+    "gap": "<experience gap if any>"
+  }},
+  "education_match": {{
+    "score": <0-100>,
+    "assessment": "<does education match requirements?>"
+  }},
+  "keyword_analysis": {{
+    "jd_keywords": ["<important keyword from JD>", "<kw2>", "<kw3>", "<kw4>", "<kw5>"],
+    "candidate_has": ["<keywords from JD that candidate has>"],
+    "candidate_missing": ["<JD keywords candidate lacks>"]
+  }},
+  "learning_plan": [
+    {{
+      "skill": "<missing skill to learn>",
+      "priority": "<Critical/High/Medium>",
+      "how_to_learn": "<specific course/resource/method>",
+      "time_needed": "<e.g. 4-6 weeks>",
+      "quick_win": "<fastest way to demonstrate this skill>"
+    }}
+  ],
+  "application_advice": "<should they apply? what angle to take? what to emphasize in resume/cover letter?>",
+  "resume_tips": ["<specific change to make to resume for this job>", "<tip2>", "<tip3>"],
+  "ats_pass_prediction": "<High/Medium/Low chance of passing ATS for this role>",
+  "ats_reason": "<why they will or won't pass ATS>",
+  "interview_likely_questions": ["<question likely to be asked given the JD>", "<q2>", "<q3>"],
+  "overall_verdict": "<Apply Now / Apply with Improvements / Upskill First / Not a Fit Yet>"
+}}
+
+Be specific about which skills are matched vs missing — reference actual text from the JD."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2500, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'match_score' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[JobMatch] OpenAI failed: {e}')
+
+    matched = candidate_skills[:4] if candidate_skills else []
+    score = min(85, 30 + len(matched) * 10)
+    return {
+        'match_score': score,
+        'match_label': 'Good Match' if score >= 65 else 'Partial Match',
+        'match_summary': f'Based on your profile, you match approximately {score}% of this role\'s requirements. You have strong relevant skills but there are some gaps to address.',
+        'matched_skills': matched,
+        'missing_skills': ['Advanced domain expertise', 'Industry-specific certifications', 'Leadership experience'],
+        'partial_skills': [{'skill': 'Project Management', 'gap': 'Need formal certification or larger-scale project experience'}],
+        'experience_match': {'score': 65, 'assessment': 'Experience level is generally aligned with role requirements.', 'gap': 'May lack some senior-level responsibilities mentioned in JD'},
+        'education_match': {'score': 75, 'assessment': 'Education background meets basic requirements for the role.'},
+        'keyword_analysis': {'jd_keywords': ['problem-solving', 'teamwork', 'communication', 'analytical', 'results-driven'], 'candidate_has': matched[:3], 'candidate_missing': ['industry-specific tools', 'certifications']},
+        'learning_plan': [{'skill': 'Missing technical skill', 'priority': 'High', 'how_to_learn': 'Coursera or Udemy course', 'time_needed': '4-6 weeks', 'quick_win': 'Build a small project demonstrating this skill'}],
+        'application_advice': 'You have a solid foundation. Tailor your resume to highlight the matched skills prominently and address gaps in your cover letter proactively.',
+        'resume_tips': ['Add more quantified achievements', 'Include keywords from the JD in your skills section', 'Reorder experience to lead with most relevant role'],
+        'ats_pass_prediction': 'Medium',
+        'ats_reason': 'You have most key skills but may miss some specific keywords the ATS is scanning for.',
+        'interview_likely_questions': ['Tell me about your experience with [key skill]', 'How do you handle [key challenge from JD]?', 'Where do you see yourself growing in this role?'],
+        'overall_verdict': 'Apply with Improvements',
+    }
+
+
+def generate_self_intro(candidate_name: str, current_role: str, target_role: str,
+                         experience_years: int, key_skills: list, key_achievement: str,
+                         user_id: str = None) -> dict:
+    """Generate 3 versions of a perfect 'Tell me about yourself' intro."""
+    skills_str = ', '.join(key_skills[:10]) if key_skills else 'relevant professional skills'
+    prompt = f"""You are a world-class interview coach who has helped thousands of candidates nail their interviews at top companies including FAANG, Fortune 500, and high-growth startups.
+
+Create 3 powerful, personalized versions of "Tell me about yourself" for:
+
+CANDIDATE: {candidate_name}
+CURRENT ROLE: {current_role}
+TARGET ROLE: {target_role}
+YEARS OF EXPERIENCE: {experience_years}
+KEY SKILLS: {skills_str}
+KEY ACHIEVEMENT: {key_achievement or 'Strong track record of professional results'}
+
+Each version must:
+- Sound natural and human — NOT rehearsed or robotic
+- Start with a strong hook, not "I am {candidate_name} and I have X years of experience"
+- Connect their past to their future (target role)
+- Include ONE specific achievement with impact
+- End with why they want THIS type of role
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "short_version": {{
+    "text": "<30-second version, 60-80 words, crisp and punchy. Perfect for phone screens.>",
+    "word_count": <word count>,
+    "best_for": "<when to use this version>",
+    "delivery_time": "30 seconds"
+  }},
+  "medium_version": {{
+    "text": "<60-second version, 120-150 words. Professional and confident. Best for most interviews.>",
+    "word_count": <word count>,
+    "best_for": "<when to use this version>",
+    "delivery_time": "60 seconds"
+  }},
+  "detailed_version": {{
+    "text": "<2-minute version, 250-280 words. Senior-level detail. For executive or panel interviews.>",
+    "word_count": <word count>,
+    "best_for": "<when to use this version>",
+    "delivery_time": "2 minutes"
+  }},
+  "power_words_used": ["<impactful word used>", "<word2>", "<word3>", "<word4>", "<word5>"],
+  "key_message": "<the one thing the interviewer should remember about this candidate after hearing this>",
+  "delivery_tips": ["<how to deliver this confidently>", "<tip2>", "<tip3>", "<tip4>"],
+  "common_mistakes_to_avoid": ["<mistake>", "<mistake2>", "<mistake3>"],
+  "body_language_tips": ["<non-verbal tip>", "<tip2>", "<tip3>"],
+  "practice_advice": "<how to practice until it feels natural, not memorized>"
+}}
+
+Write in first person as if {candidate_name} is speaking. Make it sound genuine and impressive."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=2000, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'short_version' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[SelfIntro] OpenAI failed: {e}')
+
+    return {
+        'short_version': {'text': f"I'm a {current_role} with {experience_years} years of experience specializing in {skills_str[:80]}. {key_achievement or 'I have a consistent track record of delivering results.'} I'm now looking to bring that expertise to a {target_role} role where I can make an even bigger impact.", 'word_count': 55, 'best_for': 'Phone screens and quick introductions', 'delivery_time': '30 seconds'},
+        'medium_version': {'text': f"Throughout my {experience_years} years as a {current_role}, I've built deep expertise in {skills_str[:120]}. {key_achievement or 'My work has consistently driven measurable results for my teams.'} What drives me is solving complex problems and delivering outcomes that matter. I'm at a point in my career where I'm ready to step into a {target_role} role — and everything I've done has been building toward exactly this kind of opportunity.", 'word_count': 80, 'best_for': 'Standard first-round interviews', 'delivery_time': '60 seconds'},
+        'detailed_version': {'text': f"I've spent {experience_years} years as a {current_role}, building expertise in {skills_str}. Early in my career, I focused on mastering the fundamentals — and that foundation allowed me to take on increasingly complex challenges. {key_achievement or 'Most recently, I led initiatives that significantly improved team performance and delivered strong business outcomes.'} What I've learned is that the best results come from combining technical depth with clear communication and a focus on what actually moves the needle. That's the professional I've become. Now I'm looking to bring all of that into a {target_role} position, where I can contribute at a higher level and continue growing alongside a strong team.", 'word_count': 130, 'best_for': 'Panel interviews and senior-level conversations', 'delivery_time': '2 minutes'},
+        'power_words_used': ['expertise', 'delivered', 'impact', 'complex', 'consistently'],
+        'key_message': f'{candidate_name} is a proven {current_role} ready to make an impact as a {target_role}.',
+        'delivery_tips': ['Maintain steady eye contact', 'Speak at 80% of your normal pace', 'Pause briefly after your achievement for emphasis', 'Smile naturally — confidence is contagious'],
+        'common_mistakes_to_avoid': ['Starting with "I was born in..."', 'Listing every job without a narrative thread', 'Speaking too fast due to nerves', 'Ending without connecting to the target role'],
+        'body_language_tips': ['Sit slightly forward to show engagement', 'Keep hands visible and open', 'Nod slightly when making key points'],
+        'practice_advice': 'Record yourself 5 times, watch it back, refine. Practice out loud — not in your head. Aim for it to sound conversational, not memorized.',
+    }
+
+
+def suggest_portfolio_projects(target_role: str, current_skills: list, experience_level: str,
+                                industry: str, user_id: str = None) -> dict:
+    """Suggest specific portfolio projects that will impress recruiters for a target role."""
+    skills_str = ', '.join(current_skills[:20]) if current_skills else 'general skills'
+    prompt = f"""You are a senior engineering manager and hiring expert who has reviewed thousands of portfolios and knows exactly what impresses recruiters and hiring managers.
+
+Suggest 5-6 specific, impressive portfolio projects for:
+
+TARGET ROLE: {target_role}
+CURRENT SKILLS: {skills_str}
+EXPERIENCE LEVEL: {experience_level}
+INDUSTRY: {industry or 'Technology'}
+
+Each project must:
+- Be realistic to build (not NASA-level impossible)
+- Have clear business/real-world value
+- Showcase skills specifically needed for {target_role}
+- Be differentiated — not just another todo app or weather app
+- Include specific technical details, not vague descriptions
+- Be impressive enough to mention in an interview
+
+Return a JSON object with EXACTLY these fields:
+{{
+  "projects": [
+    {{
+      "name": "<specific project name>",
+      "tagline": "<one-sentence compelling description>",
+      "description": "<what it does, who it's for, what problem it solves>",
+      "tech_stack": ["<technology>", "<tech2>", "<tech3>"],
+      "complexity": "<Beginner / Intermediate / Advanced>",
+      "estimated_build_time": "<e.g. 2-3 weeks>",
+      "wow_factor": "<what makes this stand out to a recruiter for {target_role}>",
+      "key_features_to_build": ["<feature that shows skill>", "<feature2>", "<feature3>"],
+      "how_to_present": "<how to talk about this in an interview — what to highlight>",
+      "github_readme_tip": "<what to put in README to impress>",
+      "live_demo_tip": "<how to make a live demo impressive>",
+      "difficulty_if_missing_skill": "<what to learn first if they don't have it>"
+    }}
+  ],
+  "quick_win_project": "<which project to build FIRST for fastest impact>",
+  "portfolio_strategy": "<overall advice on how to structure the portfolio — what order, how many, what to prioritize>",
+  "presentation_tips": ["<how to present portfolio in interviews>", "<tip2>", "<tip3>"],
+  "github_profile_tips": ["<how to make GitHub profile impressive>", "<tip2>", "<tip3>"],
+  "demo_day_advice": "<how to demo projects live without embarrassing yourself>",
+  "bonus_differentiator": "<one extra thing beyond projects that would make their portfolio stand out>"
+}}
+
+Make every project idea SPECIFIC to {target_role} and {experience_level} level. Real names, real tech stacks, real implementation ideas."""
+
+    try:
+        result = _call_openai(prompt, max_tokens=3000, user_id=user_id)
+        data = json.loads(_strip_json(result))
+        if data and 'projects' in data:
+            return data
+    except Exception as e:
+        logger.error(f'[PortfolioSuggester] OpenAI failed: {e}')
+
+    return {
+        'projects': [
+            {'name': f'Smart {target_role} Dashboard', 'tagline': f'A real-time analytics platform for {target_role} workflows', 'description': f'A full-stack dashboard that demonstrates core competencies required for {target_role} positions', 'tech_stack': current_skills[:3] or ['React', 'Node.js', 'MongoDB'], 'complexity': 'Intermediate', 'estimated_build_time': '2-3 weeks', 'wow_factor': 'Shows real-world problem solving and technical depth', 'key_features_to_build': ['Authentication system', 'Real-time data visualization', 'RESTful API'], 'how_to_present': 'Focus on the problem you solved and technical decisions you made', 'github_readme_tip': 'Include a live demo link, tech stack badges, and problem statement', 'live_demo_tip': 'Pre-load with realistic test data so it looks live and active', 'difficulty_if_missing_skill': 'Start with a simpler CRUD version first'},
+            {'name': 'AI-Powered Job Assistant', 'tagline': 'Automates repetitive tasks using AI integration', 'description': 'An intelligent tool that uses AI APIs to automate common tasks in your target domain', 'tech_stack': ['Python', 'OpenAI API', 'FastAPI'], 'complexity': 'Advanced', 'estimated_build_time': '3-4 weeks', 'wow_factor': 'Shows you understand AI integration — highly relevant for any modern tech role', 'key_features_to_build': ['AI API integration', 'User-friendly interface', 'Data persistence'], 'how_to_present': 'Emphasize the product thinking behind what problem you chose to solve', 'github_readme_tip': 'Add a GIF demo of the AI in action', 'live_demo_tip': 'Have 3-4 pre-prepared prompts ready to show different use cases', 'difficulty_if_missing_skill': 'Start with OpenAI API documentation and build a simple chatbot first'},
+        ],
+        'quick_win_project': f'Start with the Smart {target_role} Dashboard — it demonstrates the most relevant skills in the shortest time.',
+        'portfolio_strategy': f'Build 3 quality projects rather than 10 mediocre ones. For {target_role}: lead with your strongest, most relevant project. Each project should demonstrate a different skill set.',
+        'presentation_tips': ['Always explain WHY you built it, not just what it does', 'Quantify anything you can (users, performance gains, time saved)', 'Be ready to discuss technical challenges you overcame'],
+        'github_profile_tips': ['Pin your 6 best repositories', 'Add a professional README to your profile', 'Contribute to at least 2 open source projects'],
+        'demo_day_advice': 'Always test your demo environment the night before. Have a backup video recording in case of internet issues.',
+        'bonus_differentiator': f'Write 2-3 technical blog posts about what you learned while building these projects. Recruiters for {target_role} roles love candidates who share knowledge.',
+    }

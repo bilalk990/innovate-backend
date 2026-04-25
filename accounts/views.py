@@ -1528,3 +1528,254 @@ class PolicyComplianceView(APIView):
         except Exception as e:
             logger.error(f'[PolicyCompliance] Failed: {e}')
             return Response({'error': f'Compliance check failed: {str(e)}'}, status=500)
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature Set 7 — Candidate Career AI Tools
+# ──────────────────────────────────────────────────────────────
+
+class CoverLetterView(APIView):
+    """POST /auth/cover-letter/ — Generate a tailored cover letter for any job."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_cover_letter
+        from resumes.models import Resume
+
+        if request.user.role != 'candidate':
+            return Response({'error': 'Candidate access required.'}, status=403)
+
+        job_title    = request.data.get('job_title', '').strip()
+        company_name = request.data.get('company_name', '').strip()
+        jd_text      = request.data.get('jd_text', '').strip()
+        tone         = request.data.get('tone', 'Professional').strip()
+
+        if not job_title:
+            return Response({'error': 'job_title is required.'}, status=400)
+        if not company_name:
+            return Response({'error': 'company_name is required.'}, status=400)
+        if not jd_text:
+            return Response({'error': 'jd_text (job description) is required.'}, status=400)
+
+        # Pull candidate details from profile & resume
+        candidate_name = getattr(request.user, 'name', 'Candidate')
+        candidate_skills    = []
+        experience_summary  = ''
+        try:
+            resume = Resume.objects.filter(candidate_id=str(request.user.id), is_active=True).first()
+            if resume:
+                raw_skills = getattr(resume, 'skills', []) or []
+                candidate_skills = [s.strip() for s in raw_skills if isinstance(s, str) and s.strip()]
+                exps = getattr(resume, 'experience', []) or []
+                parts = []
+                for ex in exps[:3]:
+                    if isinstance(ex, dict):
+                        parts.append(f"{ex.get('title', '')} at {ex.get('company', '')} ({ex.get('duration', '')})")
+                    elif isinstance(ex, str):
+                        parts.append(ex)
+                experience_summary = '; '.join(parts)
+        except Exception as e:
+            logger.warning(f'[CoverLetter] Resume fetch failed: {e}')
+
+        try:
+            result = generate_cover_letter(
+                job_title=job_title,
+                company_name=company_name,
+                jd_text=jd_text,
+                candidate_name=candidate_name,
+                candidate_skills=candidate_skills,
+                experience_summary=experience_summary,
+                tone=tone,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[CoverLetter] Failed: {e}')
+            return Response({'error': f'Cover letter generation failed: {str(e)}'}, status=500)
+
+
+class JobMatchAnalyzerView(APIView):
+    """POST /auth/job-match/ — Deep-analyze any external JD against candidate profile."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import analyze_job_match
+        from resumes.models import Resume
+
+        if request.user.role != 'candidate':
+            return Response({'error': 'Candidate access required.'}, status=403)
+
+        jd_text     = request.data.get('jd_text', '').strip()
+        target_role = request.data.get('target_role', '').strip()
+
+        if not jd_text or len(jd_text) < 30:
+            return Response({'error': 'Please paste the full job description (minimum 30 characters).'}, status=400)
+
+        # Pull candidate data from resume/profile
+        candidate_skills    = []
+        experience_summary  = ''
+        education           = ''
+        try:
+            resume = Resume.objects.filter(candidate_id=str(request.user.id), is_active=True).first()
+            if resume:
+                raw_skills = getattr(resume, 'skills', []) or []
+                candidate_skills = [s.strip() for s in raw_skills if isinstance(s, str) and s.strip()]
+                exps = getattr(resume, 'experience', []) or []
+                parts = []
+                for ex in exps[:4]:
+                    if isinstance(ex, dict):
+                        parts.append(f"{ex.get('title', '')} at {ex.get('company', '')} ({ex.get('duration', '')}): {ex.get('description', '')}")
+                    elif isinstance(ex, str):
+                        parts.append(ex)
+                experience_summary = ' | '.join(parts)
+                edus = getattr(resume, 'education', []) or []
+                edu_parts = []
+                for ed in edus[:2]:
+                    if isinstance(ed, dict):
+                        edu_parts.append(f"{ed.get('degree', '')} from {ed.get('institution', '')}")
+                    elif isinstance(ed, str):
+                        edu_parts.append(ed)
+                education = ', '.join(edu_parts)
+        except Exception as e:
+            logger.warning(f'[JobMatch] Resume fetch failed: {e}')
+
+        # Allow overrides from request (user can manually provide if no resume)
+        if request.data.get('candidate_skills'):
+            raw = request.data.get('candidate_skills')
+            if isinstance(raw, list):
+                candidate_skills = raw
+            else:
+                candidate_skills = [s.strip() for s in str(raw).split(',') if s.strip()]
+
+        if request.data.get('experience_summary'):
+            experience_summary = request.data.get('experience_summary')
+        if request.data.get('education'):
+            education = request.data.get('education')
+
+        try:
+            result = analyze_job_match(
+                jd_text=jd_text,
+                candidate_skills=candidate_skills,
+                experience_summary=experience_summary,
+                education=education,
+                target_role=target_role,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[JobMatch] Failed: {e}')
+            return Response({'error': f'Job match analysis failed: {str(e)}'}, status=500)
+
+
+class SelfIntroCoachView(APIView):
+    """POST /auth/self-intro/ — Generate 3 versions of Tell Me About Yourself."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import generate_self_intro
+        from resumes.models import Resume
+
+        if request.user.role != 'candidate':
+            return Response({'error': 'Candidate access required.'}, status=403)
+
+        target_role     = request.data.get('target_role', '').strip()
+        key_achievement = request.data.get('key_achievement', '').strip()
+
+        if not target_role:
+            return Response({'error': 'target_role is required.'}, status=400)
+
+        # Pull candidate details from profile & resume
+        candidate_name  = getattr(request.user, 'name', 'Candidate')
+        current_role    = ''
+        experience_years = 0
+        key_skills      = []
+        try:
+            resume = Resume.objects.filter(candidate_id=str(request.user.id), is_active=True).first()
+            if resume:
+                raw_skills = getattr(resume, 'skills', []) or []
+                key_skills = [s.strip() for s in raw_skills[:8] if isinstance(s, str) and s.strip()]
+                exps = getattr(resume, 'experience', []) or []
+                if exps:
+                    first_exp = exps[0]
+                    if isinstance(first_exp, dict):
+                        current_role = first_exp.get('title', '')
+                    experience_years = len(exps)
+        except Exception as e:
+            logger.warning(f'[SelfIntro] Resume fetch failed: {e}')
+
+        # Allow manual overrides
+        if request.data.get('current_role'):
+            current_role = request.data.get('current_role').strip()
+        if request.data.get('experience_years') is not None:
+            experience_years = int(request.data.get('experience_years') or 0)
+        if request.data.get('key_skills'):
+            raw = request.data.get('key_skills')
+            if isinstance(raw, list):
+                key_skills = raw
+            else:
+                key_skills = [s.strip() for s in str(raw).split(',') if s.strip()]
+
+        try:
+            result = generate_self_intro(
+                candidate_name=candidate_name,
+                current_role=current_role or target_role,
+                target_role=target_role,
+                experience_years=experience_years,
+                key_skills=key_skills,
+                key_achievement=key_achievement,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[SelfIntro] Failed: {e}')
+            return Response({'error': f'Intro generation failed: {str(e)}'}, status=500)
+
+
+class PortfolioSuggesterView(APIView):
+    """POST /auth/portfolio-advisor/ — AI-powered portfolio project suggestions."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from core.openai_client import suggest_portfolio_projects
+        from resumes.models import Resume
+
+        if request.user.role != 'candidate':
+            return Response({'error': 'Candidate access required.'}, status=403)
+
+        target_role      = request.data.get('target_role', '').strip()
+        experience_level = request.data.get('experience_level', 'Mid-level').strip()
+        industry         = request.data.get('industry', 'Technology').strip()
+
+        if not target_role:
+            return Response({'error': 'target_role is required.'}, status=400)
+
+        # Auto-pull skills from resume
+        current_skills = []
+        try:
+            resume = Resume.objects.filter(candidate_id=str(request.user.id), is_active=True).first()
+            if resume:
+                raw_skills = getattr(resume, 'skills', []) or []
+                current_skills = [s.strip() for s in raw_skills if isinstance(s, str) and s.strip()]
+        except Exception as e:
+            logger.warning(f'[PortfolioSuggester] Resume fetch failed: {e}')
+
+        # Allow manual skills override
+        if request.data.get('current_skills'):
+            raw = request.data.get('current_skills')
+            if isinstance(raw, list):
+                current_skills = raw
+            else:
+                current_skills = [s.strip() for s in str(raw).split(',') if s.strip()]
+
+        try:
+            result = suggest_portfolio_projects(
+                target_role=target_role,
+                current_skills=current_skills,
+                experience_level=experience_level,
+                industry=industry,
+                user_id=str(request.user.id),
+            )
+            return Response(result)
+        except Exception as e:
+            logger.error(f'[PortfolioSuggester] Failed: {e}')
+            return Response({'error': f'Portfolio suggestion failed: {str(e)}'}, status=500)
