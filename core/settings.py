@@ -18,7 +18,7 @@ if not SECRET_KEY and not IS_MANAGEMENT_COMMAND:
     raise ValueError('SECRET_KEY must be set in .env and cannot use default insecure key!')
 
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = [h.strip() for h in config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')]
 
 # ─── Diagnostic Logs removed for production
 
