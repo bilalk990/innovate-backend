@@ -1043,9 +1043,9 @@ class BulkResumeScreenerView(APIView):
             try:
                 resume = Resume.objects.filter(candidate_id=str(cid), is_active=True).first()
                 if resume and resume.parsed_data:
-                    pd = resume.parsed_data
+                    pd = dict(resume.parsed_data or {})
                     resumes_data.append({
-                        'name': pd.get('name', f'Candidate {cid[:6]}'),
+                        'name': str(pd.get('name', f'Candidate {str(cid)[:6]}')),
                         'skills': pd.get('skills', []),
                         'experience_years': pd.get('total_experience_years', 0),
                         'education_level': pd.get('education', [{}])[0].get('degree', 'Unknown') if pd.get('education') else 'Unknown',
@@ -1053,9 +1053,11 @@ class BulkResumeScreenerView(APIView):
                         'candidate_id': str(cid),
                     })
                 else:
-                    resumes_data.append({'name': f'Candidate {str(cid)[:6]}', 'skills': [], 'experience_years': 0, 'education_level': 'Unknown', 'summary': 'No resume uploaded', 'candidate_id': str(cid)})
+                    cid_str = str(cid)
+                    resumes_data.append({'name': f'Candidate {cid_str[:6]}', 'skills': [], 'experience_years': 0, 'education_level': 'Unknown', 'summary': 'No resume uploaded', 'candidate_id': cid_str})
             except Exception:
-                resumes_data.append({'name': f'Candidate {str(cid)[:6]}', 'skills': [], 'experience_years': 0, 'education_level': 'Unknown', 'summary': 'Resume unavailable', 'candidate_id': str(cid)})
+                cid_str = str(cid)
+                resumes_data.append({'name': f'Candidate {cid_str[:6]}', 'skills': [], 'experience_years': 0, 'education_level': 'Unknown', 'summary': 'Resume unavailable', 'candidate_id': cid_str})
 
         try:
             result = screen_resumes_bulk(resumes_data, jd_text, job_title, user_id=str(request.user.id))
@@ -1567,7 +1569,7 @@ class CoverLetterView(APIView):
             if resume:
                 raw_skills = getattr(resume, 'skills', []) or []
                 candidate_skills = [s.strip() for s in raw_skills if isinstance(s, str) and s.strip()]
-                exps = getattr(resume, 'experience', []) or []
+                exps = list(getattr(resume, 'experience', []) or [])
                 parts = []
                 for ex in exps[:3]:
                     if isinstance(ex, dict):
