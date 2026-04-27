@@ -871,7 +871,8 @@ class OfferPredictorView(APIView):
                     candidate_data['location'] = rd.get('location', 'Unknown')
                 eval_obj = Evaluation.objects(candidate_id=candidate_id).order_by('-created_at').first()
                 if eval_obj:
-                    candidate_data['notes'] += f' Evaluation: {eval_obj.summary}'
+                    notes_prefix = str(candidate_data.get('notes', ''))
+                    candidate_data['notes'] = notes_prefix + f' Evaluation: {eval_obj.summary}'
             except Exception:
                 pass
 
@@ -1178,7 +1179,7 @@ class CandidateDNAView(APIView):
             ivs = Interview.objects.filter(candidate_id=str(candidate_id)).order_by('-created_at')[:3]
             transcripts = []
             for iv in ivs:
-                if hasattr(iv, 'full_transcript') and iv.full_transcript:
+                if hasattr(iv, 'full_transcript') and isinstance(iv.full_transcript, list):
                     for entry in (iv.full_transcript or [])[:5]:
                         if entry.get('role') == 'candidate':
                             transcripts.append(entry.get('content', ''))
