@@ -18,13 +18,9 @@ if not SECRET_KEY and not IS_MANAGEMENT_COMMAND:
     raise ValueError('SECRET_KEY must be set in .env and cannot use default insecure key!')
 
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = ['*']  # Temporarily allow all hosts for debugging
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
-# ─── Diagnostic Logs (Visible in Railway logs) ───────────────────────────────
-print(f"[DEBUG] ALLOWED_HOSTS: {ALLOWED_HOSTS}")
-print(f"[DEBUG] CORS_ORIGINS: {config('CORS_ALLOWED_ORIGINS', default='Not Set')}")
-print(f"[DEBUG] CSRF_ORIGINS: {config('CSRF_TRUSTED_ORIGINS', default='Not Set')}")
-print(f"[DEBUG] MONGODB_URI starts with: {config('MONGODB_URI', default='')[:20]}...")
+# ─── Diagnostic Logs removed for production
 
 # ─── Installed Apps ───────────────────────────────────────────────────────────
 INSTALLED_APPS = [
