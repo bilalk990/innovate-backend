@@ -120,7 +120,11 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-os.makedirs(BASE_DIR / 'media' / 'resumes', exist_ok=True)
+# Pre-create media directories (Skip on read-only systems like Vercel)
+try:
+    os.makedirs(BASE_DIR / 'media' / 'resumes', exist_ok=True)
+except OSError:
+    print("[WARNING] Could not create media directory (Read-only file system).")
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
