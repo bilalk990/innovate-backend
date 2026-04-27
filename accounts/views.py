@@ -78,7 +78,7 @@ class RegisterView(APIView):
         except mongoengine.ValidationError as e:
             return Response({'error': f'Validation error: {str(e)}'}, status=400)
         except Exception as e:
-            return Response({'error': 'Registration failed. Please try again.'}, status=500)
+            return Response({'error': f'Registration failed: {str(e)}'}, status=500)
 
 class AuditLogListView(APIView):
     permission_classes = [IsAuthenticated]
