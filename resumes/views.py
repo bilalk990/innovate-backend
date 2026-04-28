@@ -277,10 +277,10 @@ class ResumeUploadView(APIView):
             return Response({'error': 'Resume file is required.'}, status=400)
 
         
-        # Validate file size (max 10MB)
-        max_size = 10 * 1024 * 1024  # 10MB
+        # Validate file size (max 20MB)
+        max_size = 20 * 1024 * 1024  # 20MB
         if file.size > max_size:
-            return Response({'error': 'File size must be less than 10MB.'}, status=400)
+            return Response({'error': 'File size must be less than 20MB.'}, status=400)
         
         allowed_extensions = ['.pdf', '.txt', '.docx', '.doc']
         ext = os.path.splitext(file.name)[1].lower()
