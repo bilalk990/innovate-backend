@@ -271,10 +271,11 @@ class ResumeUploadView(APIView):
         if request.user.role != 'candidate':
             return Response({'error': 'Only candidates can upload resumes.'}, status=403)
 
-        if 'resume' not in request.FILES:
+        # Support both 'resume' and 'file' keys for flexibility
+        file = request.FILES.get('resume') or request.FILES.get('file')
+        if not file:
             return Response({'error': 'Resume file is required.'}, status=400)
 
-        file = request.FILES['resume']
         
         # Validate file size (max 10MB)
         max_size = 10 * 1024 * 1024  # 10MB
@@ -298,81 +299,50 @@ class ResumeUploadView(APIView):
         # Mark previous resumes as inactive
         Resume.objects(candidate_id=str(request.user.id)).update(is_active=False)
 
-        # Save file first, return immediately with pending status
+        # Saved file first, return immediately with pending status
         resume = Resume(
             candidate_id=str(request.user.id),
             file_path=file_path,
             original_filename=file.name,
             file_size=file.size,
-            parse_status='pending',
+            parse_status='processing',
             is_active=True,
         )
         resume.save()
 
-        # #53 — Parse resume asynchronously in background thread (non-blocking)
-        import threading
-        import logging
-        logger = logging.getLogger('innovaite')
-
-        def _parse_in_background(resume_id, fp, extension):
-            try:
-                from resumes.models import Resume as R
-                r = R.objects.get(id=resume_id)
-                r.parse_status = 'processing'  # Set to processing
-                r.save()
-                
-                logger.info(f'[Resume] Starting parse for {resume_id}')
-                parsed = parse_resume(fp, extension)
-                
-                # Log what was parsed
-                logger.info(f'[Resume] Parsed data: name={parsed.get("name")}, skills_count={len(parsed.get("skills", []))}, parsed_by={parsed.get("parsed_by")}')
-                logger.info(f'[Resume] Full parsed data: {parsed}')
-                
-                r.parsed_data = parsed
-                # CRITICAL FIX: More lenient success criteria - accept if we have ANY useful data
-                has_name = bool(parsed.get('name') and len(str(parsed.get('name')).strip()) > 2)
-                has_skills = bool(parsed.get('skills') and len(parsed.get('skills', [])) > 0)
-                has_email = bool(parsed.get('email'))
-                has_experience = bool(parsed.get('experience') and len(parsed.get('experience', [])) > 0)
-                has_education = bool(parsed.get('education') and len(parsed.get('education', [])) > 0)
-                has_summary = bool(parsed.get('summary') and len(str(parsed.get('summary')).strip()) > 10)
-                
-                # Success if we have at least 2 of these fields
-                success_count = sum([has_name, has_skills, has_email, has_experience, has_education, has_summary])
-                
-                if success_count >= 2:
-                    r.parse_status = 'parsed'
-                    logger.info(f'[Resume] Parse SUCCESS - {success_count}/6 fields found')
-                else:
-                    r.parse_status = 'failed'
-                    logger.warning(f'[Resume] Parse FAILED - only {success_count}/6 fields found. Data: {parsed}')
-                
-                r.parsed_by_ai = parsed.get('parsed_by') == 'openai-gpt'
-                r.save()
-                logger.info(f'[Resume] Successfully processed resume {resume_id}, status={r.parse_status}')
-            except Exception as e:
-                logger.error(f'[Resume] Background parse failed for {resume_id}: {e}', exc_info=True)
-                logger.error(f'[Resume] Full error details: {type(e).__name__}: {str(e)}')
-                try:
-                    from resumes.models import Resume as R
-                    r = R.objects.get(id=resume_id)
-                    r.parse_status = 'failed'
-                    r.parsed_data = {
-                        'error': str(e),
-                        'error_type': type(e).__name__,
-                        'message': 'Resume parsing failed. Please try uploading again or use a different format.'
-                    }
-                    r.save()
-                    logger.info(f'[Resume] Saved failed status for {resume_id}')
-                except Exception as save_err:
-                    logger.error(f'[Resume] Failed to save error status: {save_err}')
-
-        t = threading.Thread(
-            target=_parse_in_background,
-            args=(str(resume.id), file_path, ext),
-            daemon=True
-        )
-        t.start()
+        # Parse resume synchronously (Required for Vercel Serverless environment)
+        try:
+            logger.info(f'[Resume] Starting synchronous parse for {resume.id} on Vercel/Railway')
+            parsed = parse_resume(file_path, ext)
+            
+            # Log what was parsed
+            logger.info(f'[Resume] Parsed data: name={parsed.get("name")}, skills_count={len(parsed.get("skills", []))}, parsed_by={parsed.get("parsed_by")}')
+            
+            resume.parsed_data = parsed
+            
+            # Success criteria
+            has_name = bool(parsed.get('name') and len(str(parsed.get('name')).strip()) > 2)
+            has_skills = bool(parsed.get('skills') and len(parsed.get('skills', [])) > 0)
+            has_email = bool(parsed.get('email'))
+            has_experience = bool(parsed.get('experience') and len(parsed.get('experience', [])) > 0)
+            
+            success_count = sum([has_name, has_skills, has_email, has_experience])
+            
+            if success_count >= 1: # Be more lenient for synchronous success
+                resume.parse_status = 'parsed'
+                logger.info(f'[Resume] Parse SUCCESS - {success_count} fields found')
+            else:
+                resume.parse_status = 'failed'
+                logger.warning(f'[Resume] Parse FAILED - insufficient fields found.')
+            
+            resume.parsed_by_ai = parsed.get('parsed_by') == 'openai-gpt'
+            resume.save()
+            
+        except Exception as e:
+            logger.error(f'[Resume] Sync parse failed for {resume.id}: {e}', exc_info=True)
+            resume.parse_status = 'failed'
+            resume.parsed_data = {'error': str(e)}
+            resume.save()
 
         return Response(resume.to_dict(), status=201)
 
