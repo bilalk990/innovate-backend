@@ -1981,89 +1981,192 @@ def generate_mock_interview_question(role: str, level: str, history: list = None
 
 def evaluate_mock_answer(question: str, answer: str, role: str, question_type: str = 'behavioral', user_id: str = None) -> dict:
     """Evaluate a candidate answer to a mock interview question and return detailed feedback."""
+    answer_trimmed = str(answer).strip()
+    word_count = len(answer_trimmed.split())
+
+    # Build type-specific scoring guidance
+    type_criteria = {
+        'behavioral': 'Uses STAR method (Situation, Task, Action, Result). Provides a REAL specific example. Has measurable outcomes. Does not speak in vague generalities.',
+        'technical': 'Demonstrates accurate domain knowledge. Uses correct terminology. Shows depth (not surface-level). Covers edge cases or trade-offs.',
+        'situational': 'Describes a clear decision-making process. Shows logical reasoning. Considers multiple stakeholders. Has a clear outcome.',
+        'motivational': 'Is authentic and specific to this role/company. Shows genuine passion. Aligns with the role requirements. Is not generic or copied.'
+    }
+    criteria = type_criteria.get(question_type, type_criteria['behavioral'])
+
     prompt = (
-        'You are evaluating a ' + role + ' interview answer for a ' + question_type + ' question.\n\n'
+        'You are a STRICT, senior interviewer evaluating a ' + role + ' candidate.\n'
+        'Question type: ' + question_type.upper() + '\n\n'
         'QUESTION: ' + question + '\n\n'
-        'CANDIDATE ANSWER: ' + str(answer)[:1000] + '\n\n'
-        'Score and give actionable feedback. Be honest but constructive.\n\n'
-        'Return ONLY valid JSON:\n'
+        'CANDIDATE ANSWER (' + str(word_count) + ' words):\n'
+        '"""' + answer_trimmed[:1500] + '"""\n\n'
+        'SCORING CRITERIA FOR ' + question_type.upper() + ' QUESTIONS:\n'
+        + criteria + '\n\n'
+        'SCORING RULES (BE STRICT AND HONEST — do NOT give everyone 6):\n'
+        '- 9-10: Exceptional answer. Specific real example, measurable results, clear structure, impressive.\n'
+        '- 7-8: Good answer. Has most elements but missing depth or specificity in 1-2 areas.\n'
+        '- 5-6: Average. Addresses the question but vague, generic, or missing concrete examples.\n'
+        '- 3-4: Below Average. Barely addresses the question, too short, or irrelevant content.\n'
+        '- 1-2: Poor. Does not answer the question, gibberish, or extremely low effort.\n\n'
+        'A one-sentence answer MUST score 1-3. A vague general answer MUST score 4-5. Only score 8+ for truly impressive answers.\n\n'
+        'Return ONLY valid JSON (no markdown, no extra text):\n'
         '{\n'
-        '  "score": 1-10,\n'
+        '  "score": <integer 1-10 based on strict criteria>,\n'
         '  "grade": "Excellent|Good|Average|Below Average|Poor",\n'
-        '  "feedback": "Detailed 2-3 sentence personalized feedback",\n'
-        '  "strengths": ["strength1", "strength2"],\n'
-        '  "improvements": ["specific improvement1", "specific improvement2"],\n'
-        '  "better_answer_hint": "One-line hint for a stronger answer",\n'
-        '  "keywords_used": ["keyword found in answer"],\n'
-        '  "keywords_missed": ["important keyword missing"]\n'
+        '  "feedback": "<2-3 sentences of specific, personalized, honest feedback mentioning what was said>",\n'
+        '  "strengths": ["<specific strength from their actual answer>", "<another strength if any>"],\n'
+        '  "improvements": ["<specific thing missing from this answer>", "<another improvement>"],\n'
+        '  "better_answer_hint": "<One concrete sentence: what the ideal answer would include that theirs did not>",\n'
+        '  "keywords_used": ["<keyword or phrase actually found in their answer>"],\n'
+        '  "keywords_missed": ["<important keyword or concept they should have mentioned>"]\n'
         '}'
     )
     try:
-        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        result = json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        # Validate score is within bounds
+        score = int(result.get('score', 5))
+        result['score'] = max(1, min(10, score))
+        # Ensure grade matches score
+        if result['score'] >= 9:
+            result['grade'] = 'Excellent'
+        elif result['score'] >= 7:
+            result['grade'] = 'Good'
+        elif result['score'] >= 5:
+            result['grade'] = 'Average'
+        elif result['score'] >= 3:
+            result['grade'] = 'Below Average'
+        else:
+            result['grade'] = 'Poor'
+        return result
     except Exception as e:
         logger.warning(f'[GPT] Mock answer evaluation failed: {e}')
+        # Smarter fallback based on actual answer quality signals
+        word_count = len(answer_trimmed.split())
+        has_example = any(w in answer_trimmed.lower() for w in ['i worked', 'i built', 'i led', 'for example', 'specifically', 'the result', 'i achieved', 'when i'])
+        has_metrics = any(c.isdigit() for c in answer_trimmed)
+        if word_count < 15:
+            fb_score = 2
+        elif word_count < 30:
+            fb_score = 4
+        elif has_example and has_metrics:
+            fb_score = 8
+        elif has_example:
+            fb_score = 7
+        else:
+            fb_score = 5
+
+        grade_map = {2: 'Poor', 4: 'Below Average', 5: 'Average', 7: 'Good', 8: 'Good'}
         return {
-            'score': 6,
-            'grade': 'Average',
-            'feedback': 'Your answer addressed the question but could be more specific. Try using concrete examples.',
-            'strengths': ['Attempted the question', 'Relevant topic coverage'],
-            'improvements': ['Add specific examples with measurable outcomes', 'Use STAR format: Situation, Task, Action, Result'],
-            'better_answer_hint': 'Ground your answer in a real situation from your experience.',
+            'score': fb_score,
+            'grade': grade_map.get(fb_score, 'Average'),
+            'feedback': 'Your answer was recorded. For stronger performance, use the STAR method: describe the Situation, your Task, the Action you took, and the measurable Result.' if fb_score < 6 else 'Good attempt. Make sure to include specific examples and measurable outcomes to stand out.',
+            'strengths': ['Attempted the question'] if fb_score < 5 else ['Provided context', 'Relevant topic coverage'],
+            'improvements': ['Answer is too short — aim for at least 100 words' if word_count < 30 else 'Add specific metrics or outcomes', 'Use STAR format: Situation, Task, Action, Result'],
+            'better_answer_hint': 'Start with: "In my previous role at [Company], I was faced with [specific situation]..." and end with a measurable result.',
             'keywords_used': [],
-            'keywords_missed': ['specific example', 'measurable result']
+            'keywords_missed': ['specific example', 'measurable result', 'action taken']
         }
 
 
 def generate_mock_interview_report(role: str, level: str, history: list, user_id: str = None) -> dict:
     """Generate a comprehensive final performance report after completing a mock interview."""
-    qa_summary = []
     total_score = 0
+    scored_count = 0
+    qa_full_text = []
+
     for i, item in enumerate(history, 1):
-        score = item.get('score', 5)
-        total_score += score
-        qa_summary.append({
-            'q': i,
-            'question_type': item.get('question_type', 'behavioral'),
-            'score': score,
-            'grade': item.get('grade', 'Average')
-        })
-    avg_score = total_score / max(len(history), 1)
+        score = item.get('score')
+        if score is not None:
+            total_score += int(score)
+            scored_count += 1
+        qa_full_text.append(
+            'Q' + str(i) + ' [' + item.get('question_type', 'behavioral').upper() + '] Score: ' + str(score) + '/10\n'
+            'Question: ' + str(item.get('question', '')) + '\n'
+            'Answer: ' + str(item.get('answer', '(no answer)'))[:600] + '\n'
+            'Feedback given: ' + str(item.get('feedback', '')) + '\n'
+            'Strengths: ' + ', '.join(item.get('strengths', [])) + '\n'
+            'Improvements needed: ' + ', '.join(item.get('improvements', []))
+        )
+
+    avg_score = total_score / max(scored_count, 1)
+    # Convert avg per-question score (1-10) to 0-100
+    # avg 10/10 = 100, avg 5/10 = 50, etc. Keep it honest.
+    computed_overall = round((avg_score / 10) * 100)
 
     prompt = (
-        'Generate a comprehensive final mock interview report.\n\n'
-        'Role: ' + role + '\n'
-        'Level: ' + level + '\n'
-        'Questions Attempted: ' + str(len(history)) + '\n'
-        'Average Score: ' + str(round(avg_score, 1)) + '/10\n'
-        'Per-question breakdown:\n' + json.dumps(qa_summary, indent=2) + '\n\n'
-        'Return ONLY valid JSON:\n'
+        'You are a senior HR director generating a FINAL performance report for a ' + level + '-level ' + role + ' mock interview.\n\n'
+        'INTERVIEW TRANSCRIPT:\n'
+        '─────────────────────\n'
+        + '\n\n'.join(qa_full_text) + '\n\n'
+        '─────────────────────\n'
+        'COMPUTED OVERALL SCORE: ' + str(computed_overall) + '/100 (based on per-question scores)\n\n'
+        'YOUR TASK: Analyze the full transcript above and generate an honest, specific report.\n'
+        '- The overall_score MUST be between ' + str(max(computed_overall - 5, 0)) + ' and ' + str(min(computed_overall + 5, 100)) + ' (within 5 points of computed score).\n'
+        '- Identify REAL patterns from the actual answers (not generic advice).\n'
+        '- Be specific: reference what the candidate actually said or failed to say.\n'
+        '- top_strengths must reflect what genuinely went well in the answers.\n'
+        '- critical_improvements must be specific gaps from the actual answers, not generic tips.\n\n'
+        'SCORING SCALE:\n'
+        '- 85-100: Excellent performance, ready for real interviews\n'
+        '- 70-84: Good performance, minor improvements needed\n'
+        '- 55-69: Average, needs more practice with structure\n'
+        '- 40-54: Below average, significant gaps in answers\n'
+        '- 0-39: Poor performance, fundamentals need work\n\n'
+        'Return ONLY valid JSON (no markdown):\n'
         '{\n'
-        '  "overall_score": 0-100,\n'
+        '  "overall_score": <integer within 5 of ' + str(computed_overall) + '>,\n'
         '  "performance_grade": "Excellent|Good|Average|Needs Improvement|Poor",\n'
-        '  "interview_summary": "3-4 sentence holistic assessment of performance",\n'
-        '  "top_strengths": ["strength1", "strength2", "strength3"],\n'
-        '  "critical_improvements": ["area1", "area2", "area3"],\n'
-        '  "recommended_resources": ["resource or action 1", "resource or action 2"],\n'
+        '  "interview_summary": "<3-4 sentences. Reference specific answers. Be honest about quality.>",\n'
+        '  "top_strengths": ["<specific strength from actual answers>", "<strength2>", "<strength3 if any>"],\n'
+        '  "critical_improvements": ["<specific gap from actual answers>", "<gap2>", "<gap3>"],\n'
+        '  "question_by_question": [\n'
+        '    {"q": 1, "score": <score>, "grade": "<grade>", "one_line_feedback": "<specific to their answer>"}\n'
+        '  ],\n'
+        '  "recommended_resources": ["<specific resource or practice type based on their gaps>", "<resource2>"],\n'
         '  "readiness_for_real_interview": "Ready|Almost Ready|Needs More Practice|Not Ready",\n'
-        '  "next_steps": ["actionable step1", "step2", "step3"],\n'
-        '  "motivational_note": "Short encouraging closing message for the candidate"\n'
+        '  "next_steps": ["<actionable step based on their specific weaknesses>", "<step2>", "<step3>"],\n'
+        '  "motivational_note": "<Short encouraging closing that acknowledges what they did well>"\n'
         '}'
     )
     try:
-        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        result = json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        # Enforce score boundaries
+        reported = int(result.get('overall_score', computed_overall))
+        result['overall_score'] = max(0, min(100, reported))
+        return result
     except Exception as e:
         logger.warning(f'[GPT] Mock interview report generation failed: {e}')
-        overall = min(int(avg_score * 10), 100)
+        overall = computed_overall
+        if overall >= 85:
+            grade, readiness = 'Excellent', 'Ready'
+        elif overall >= 70:
+            grade, readiness = 'Good', 'Almost Ready'
+        elif overall >= 55:
+            grade, readiness = 'Average', 'Needs More Practice'
+        elif overall >= 40:
+            grade, readiness = 'Needs Improvement', 'Needs More Practice'
+        else:
+            grade, readiness = 'Poor', 'Not Ready'
         return {
             'overall_score': overall,
-            'performance_grade': 'Good' if overall >= 70 else 'Average' if overall >= 50 else 'Needs Improvement',
-            'interview_summary': f'You completed a {role} mock interview scoring {overall}/100. Keep practicing to build confidence.',
-            'top_strengths': ['Completed the full interview', 'Demonstrated engagement', 'Showed relevant knowledge'],
-            'critical_improvements': ['Use more specific examples', 'Practice concise answers', 'Research the role deeper'],
-            'recommended_resources': ['Practice STAR method daily', 'Record and review your answers', 'Study role-specific topics'],
-            'readiness_for_real_interview': 'Almost Ready' if overall >= 65 else 'Needs More Practice',
-            'next_steps': ['Practice one mock interview daily', 'Record yourself and review', 'Research company-specific questions'],
-            'motivational_note': 'Every practice session makes you stronger. You are on the right path!'
+            'performance_grade': grade,
+            'interview_summary': f'You completed a {level}-level {role} mock interview scoring {overall}/100. ' + (
+                'Strong performance overall — keep refining your answers.' if overall >= 70
+                else 'Your answers need more specific examples and structured responses (STAR method).'
+            ),
+            'top_strengths': ['Completed all questions', 'Demonstrated role awareness'] if overall >= 50 else ['Attempted all questions'],
+            'critical_improvements': [
+                'Use specific examples with measurable outcomes in every answer',
+                'Structure answers using STAR method (Situation, Task, Action, Result)',
+                'Increase answer depth — aim for 100-150 words per answer'
+            ],
+            'recommended_resources': ['Practice STAR method with 10 behavioral questions daily', 'Record yourself and review for filler words and clarity'],
+            'readiness_for_real_interview': readiness,
+            'next_steps': [
+                'Practice 2 mock interviews per week',
+                'Prepare 5 specific STAR stories from your experience',
+                'Research the target company and role deeply'
+            ],
+            'motivational_note': 'Every practice session builds real skill. Review your answers, focus on the improvements, and try again!'
         }
 
 
