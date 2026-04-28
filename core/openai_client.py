@@ -2171,60 +2171,138 @@ def generate_mock_interview_report(role: str, level: str, history: list, user_id
 
 
 def suggest_salary_negotiation(job_title: str, skills: list, experience_years: int, location: str, current_offer: float = None, company_size: str = 'medium', user_id: str = None) -> dict:
-    """Provide AI-powered salary negotiation strategy with market data and negotiation scripts."""
-    offer_text = ('$' + str(int(current_offer))) if current_offer else 'No offer yet'
-    skills_text = ', '.join(skills[:10]) if skills else 'Not specified'
+    """Provide AI-powered salary negotiation strategy with real local market data."""
+
+    skills_text = ', '.join(skills[:12]) if skills else 'Not specified'
+    location_clean = (location or 'United States').strip()
+
+    # Pre-detect currency from location for fallback use
+    _loc_lower = location_clean.lower()
+    if any(k in _loc_lower for k in ['pakistan', 'pk']):
+        _fallback_currency = 'PKR'
+        _fallback_ranges = {'junior': (60000, 120000, 200000), 'mid': (150000, 280000, 450000), 'senior': (350000, 600000, 1000000)}
+        _monthly_note = 'Monthly salaries in Pakistan range based on city (Karachi/Lahore higher).'
+    elif any(k in _loc_lower for k in ['india', 'in']):
+        _fallback_currency = 'INR'
+        _fallback_ranges = {'junior': (300000, 600000, 1000000), 'mid': (800000, 1500000, 2500000), 'senior': (2000000, 4000000, 8000000)}
+        _monthly_note = 'Indian tech salaries vary widely by city — Bangalore/Mumbai/Hyderabad pay 20-40% more.'
+    elif any(k in _loc_lower for k in ['united kingdom', 'uk', 'england', 'britain']):
+        _fallback_currency = 'GBP'
+        _fallback_ranges = {'junior': (22000, 32000, 42000), 'mid': (40000, 55000, 70000), 'senior': (65000, 85000, 120000)}
+        _monthly_note = 'London salaries are 20-30% higher than the UK national average.'
+    elif any(k in _loc_lower for k in ['canada']):
+        _fallback_currency = 'CAD'
+        _fallback_ranges = {'junior': (50000, 65000, 80000), 'mid': (75000, 95000, 115000), 'senior': (110000, 140000, 180000)}
+        _monthly_note = 'Toronto and Vancouver command the highest salaries in Canada.'
+    elif any(k in _loc_lower for k in ['australia']):
+        _fallback_currency = 'AUD'
+        _fallback_ranges = {'junior': (55000, 70000, 85000), 'mid': (85000, 105000, 130000), 'senior': (120000, 150000, 200000)}
+        _monthly_note = 'Sydney and Melbourne salaries are typically 10-15% above national average.'
+    elif any(k in _loc_lower for k in ['germany', 'deutschland']):
+        _fallback_currency = 'EUR'
+        _fallback_ranges = {'junior': (35000, 45000, 55000), 'mid': (50000, 65000, 80000), 'senior': (75000, 95000, 130000)}
+        _monthly_note = 'Berlin and Munich lead German tech salaries, often with strong benefits packages.'
+    elif any(k in _loc_lower for k in ['uae', 'dubai', 'abu dhabi', 'emirates']):
+        _fallback_currency = 'AED'
+        _fallback_ranges = {'junior': (60000, 90000, 130000), 'mid': (100000, 160000, 220000), 'senior': (180000, 280000, 400000)}
+        _monthly_note = 'UAE tech salaries are tax-free. Dubai pays highest for tech roles.'
+    elif any(k in _loc_lower for k in ['saudi', 'riyadh', 'ksa']):
+        _fallback_currency = 'SAR'
+        _fallback_ranges = {'junior': (60000, 90000, 130000), 'mid': (100000, 160000, 240000), 'senior': (200000, 320000, 480000)}
+        _monthly_note = 'Saudi Arabia salaries are tax-free with housing and transport allowances common.'
+    elif any(k in _loc_lower for k in ['bangladesh', 'bd', 'dhaka']):
+        _fallback_currency = 'BDT'
+        _fallback_ranges = {'junior': (300000, 500000, 800000), 'mid': (600000, 1000000, 1800000), 'senior': (1500000, 2500000, 4000000)}
+        _monthly_note = 'Dhaka tech market is growing rapidly with increasing international remote opportunities.'
+    elif any(k in _loc_lower for k in ['europe', 'eu', 'france', 'netherlands', 'spain', 'italy']):
+        _fallback_currency = 'EUR'
+        _fallback_ranges = {'junior': (28000, 38000, 50000), 'mid': (45000, 60000, 78000), 'senior': (70000, 90000, 120000)}
+        _monthly_note = 'European salaries vary by country — Netherlands and Switzerland pay significantly more.'
+    else:
+        _fallback_currency = 'USD'
+        _fallback_ranges = {'junior': (55000, 75000, 95000), 'mid': (80000, 105000, 135000), 'senior': (120000, 155000, 200000)}
+        _monthly_note = 'US tech salaries vary by state — NYC, SF, and Seattle pay 30-50% above national average.'
+
+    # Determine experience tier for fallback
+    _tier = 'junior' if experience_years <= 2 else 'senior' if experience_years >= 6 else 'mid'
+    _fb_min, _fb_mid, _fb_max = _fallback_ranges[_tier]
+    _fb_ask = int(_fb_mid * 1.08)
+
+    # Format current offer text in local currency
+    _curr_symbol = {'USD': '$', 'PKR': 'Rs.', 'INR': '₹', 'GBP': '£', 'EUR': '€',
+                    'AED': 'AED', 'SAR': 'SAR', 'CAD': 'CA$', 'AUD': 'A$', 'BDT': '৳'}.get(_fallback_currency, '')
+    offer_text = f'{_curr_symbol}{int(current_offer):,}' if current_offer else 'No offer yet'
 
     prompt = (
-        'You are a salary negotiation expert with real market knowledge.\n\n'
-        'Profile:\n'
+        'You are a senior compensation consultant with REAL, UP-TO-DATE market data for ' + location_clean + '.\n\n'
+        'CANDIDATE PROFILE:\n'
         '- Job Title: ' + job_title + '\n'
         '- Skills: ' + skills_text + '\n'
         '- Experience: ' + str(experience_years) + ' years\n'
-        '- Location: ' + location + '\n'
+        '- Location: ' + location_clean + '\n'
         '- Company Size: ' + company_size + '\n'
         '- Current Offer: ' + offer_text + '\n\n'
-        'Provide realistic market salary data and negotiation strategy.\n\n'
-        'Return ONLY valid JSON:\n'
+        'CRITICAL INSTRUCTIONS:\n'
+        '1. Detect the correct local currency for "' + location_clean + '" (PKR for Pakistan, INR for India, USD for USA, GBP for UK, EUR for Europe, AED for UAE, SAR for Saudi Arabia, CAD for Canada, AUD for Australia, BDT for Bangladesh, etc.)\n'
+        '2. Return salary numbers in that LOCAL CURRENCY — NOT USD unless the location is USA/Americas.\n'
+        '3. Use REAL current market data for ' + location_clean + ' in ' + str(__import__("datetime").date.today().year) + '.\n'
+        '4. For Pakistan: typical React developer salaries are Rs. 80,000-350,000/month. For India: ₹6L-30L/year. For UK: £35,000-90,000/year. Match these realistic ranges.\n'
+        '5. The market_insight MUST mention the specific city/region within ' + location_clean + ' if relevant (e.g., Karachi vs Lahore, Bangalore vs Delhi).\n'
+        '6. negotiation_script and counter_offer_responses must use the LOCAL currency symbol.\n\n'
+        'Return ONLY valid JSON (no markdown):\n'
         '{\n'
-        '  "market_min": annual_salary_number,\n'
-        '  "market_mid": annual_salary_number,\n'
-        '  "market_max": annual_salary_number,\n'
-        '  "recommended_ask": annual_salary_number,\n'
-        '  "currency": "USD|PKR|GBP|EUR|INR",\n'
+        '  "market_min": <annual salary in LOCAL currency as integer>,\n'
+        '  "market_mid": <annual salary in LOCAL currency as integer>,\n'
+        '  "market_max": <annual salary in LOCAL currency as integer>,\n'
+        '  "recommended_ask": <annual salary in LOCAL currency as integer>,\n'
+        '  "currency": "<ISO currency code: PKR/INR/USD/GBP/EUR/AED/SAR/CAD/AUD/etc.>",\n'
+        '  "currency_symbol": "<symbol: Rs./₹/$/£/€/AED/etc.>",\n'
+        '  "salary_period": "monthly|annual",\n'
         '  "confidence": "high|medium|low",\n'
-        '  "market_insight": "2-sentence market context explanation",\n'
-        '  "negotiation_script": "Full word-for-word opening negotiation script",\n'
+        '  "market_insight": "<2-3 sentences with SPECIFIC data about ' + location_clean + ' market for ' + job_title + ' roles in ' + str(__import__("datetime").date.today().year) + '>",\n'
+        '  "negotiation_script": "<Full opening negotiation script using LOCAL currency>",\n'
         '  "counter_offer_responses": [\n'
-        '    {"scenario": "They say the budget is fixed", "response": "word-for-word response"},\n'
-        '    {"scenario": "They say your ask is too high", "response": "word-for-word response"},\n'
-        '    {"scenario": "They ask for your current salary", "response": "word-for-word response"}\n'
+        '    {"scenario": "They say the budget is fixed", "response": "<word-for-word>"},\n'
+        '    {"scenario": "They say your ask is too high", "response": "<word-for-word>"},\n'
+        '    {"scenario": "They ask for your current salary", "response": "<word-for-word>"}\n'
         '  ],\n'
-        '  "benefits_to_negotiate": ["benefit1", "benefit2", "benefit3"],\n'
-        '  "timing_tips": ["tip1", "tip2"],\n'
-        '  "red_flags": ["red flag1", "red flag2"],\n'
-        '  "power_phrases": ["phrase1", "phrase2", "phrase3"]\n'
+        '  "benefits_to_negotiate": ["<benefit relevant to ' + location_clean + ' market>", "<benefit2>", "<benefit3>"],\n'
+        '  "timing_tips": ["<tip1>", "<tip2>"],\n'
+        '  "red_flags": ["<red flag1>", "<red flag2>"],\n'
+        '  "power_phrases": ["<phrase using LOCAL currency>", "<phrase2>", "<phrase3>"]\n'
         '}'
     )
     try:
-        return json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        result = json.loads(_strip_json(_call(prompt, user_id=user_id)))
+        # Validate currency field is present
+        if not result.get('currency'):
+            result['currency'] = _fallback_currency
+        return result
     except Exception as e:
         logger.warning(f'[GPT] Salary negotiation suggestion failed: {e}')
         return {
-            'market_min': 60000, 'market_mid': 80000, 'market_max': 100000,
-            'recommended_ask': 85000, 'currency': 'USD', 'confidence': 'low',
-            'market_insight': 'Market data is based on your role and location. Adjust based on company size and local cost of living.',
-            'negotiation_script': 'Thank you for the offer. I am very excited about this opportunity. Based on my research and experience, I was expecting a range closer to [X]. Is there flexibility in the compensation?',
+            'market_min': _fb_min,
+            'market_mid': _fb_mid,
+            'market_max': _fb_max,
+            'recommended_ask': _fb_ask,
+            'currency': _fallback_currency,
+            'currency_symbol': _curr_symbol,
+            'salary_period': 'annual',
+            'confidence': 'medium',
+            'market_insight': f'Market data for {job_title} in {location_clean} based on {experience_years} years experience. {_monthly_note}',
+            'negotiation_script': f'Thank you for the offer. I am very excited about this role. Based on my research of the {location_clean} market and my {experience_years} years of experience, I was expecting a range closer to {_curr_symbol}{_fb_ask:,}. Is there any flexibility?',
             'counter_offer_responses': [
-                {'scenario': 'They say the budget is fixed', 'response': 'I completely understand. Could we discuss other benefits like additional PTO, remote work flexibility, or a sign-on bonus?'},
-                {'scenario': 'They say your ask is too high', 'response': 'I appreciate your transparency. What is the budgeted range for this role? I want to make sure we find something that works for both of us.'},
-                {'scenario': 'They ask for your current salary', 'response': 'I prefer to focus on the market value for this role and the value I bring rather than my current compensation.'}
+                {'scenario': 'They say the budget is fixed', 'response': f'I completely understand. Could we explore other benefits like remote work flexibility, additional leave, or a performance review in 6 months?'},
+                {'scenario': 'They say your ask is too high', 'response': f'I appreciate your transparency. Based on current market rates in {location_clean} for this role, {_curr_symbol}{_fb_mid:,} is actually at the mid-market point. What is the maximum budgeted range?'},
+                {'scenario': 'They ask for your current salary', 'response': 'I prefer to focus on the market value for this specific role and the value I bring, rather than anchoring to my current compensation.'}
             ],
-            'benefits_to_negotiate': ['Remote work flexibility', 'Additional PTO', 'Professional development budget', 'Sign-on bonus'],
-            'timing_tips': ['Always wait for a written offer before negotiating', 'Let them give a number first whenever possible'],
-            'red_flags': ['Pressure to accept immediately', 'Vague or undisclosed salary range', 'No written offer provided'],
-            'power_phrases': ['Based on my market research...', 'I am very excited about this role and...', 'I believe my experience in X justifies...']
+            'benefits_to_negotiate': ['Remote work flexibility', 'Annual performance bonus', 'Professional development budget'],
+            'timing_tips': ['Always wait for a written offer before negotiating', 'Let them state a number first whenever possible'],
+            'red_flags': ['Pressure to accept immediately without time to review', 'Vague or undisclosed salary range', 'No written offer provided'],
+            'power_phrases': [f'Based on my research of the {location_clean} market...', f'Given my {experience_years} years of experience in this domain...', 'I believe my skill set in ' + skills_text[:40] + ' justifies this ask.']
         }
+
+
 
 
 def analyze_anxiety_signals(speech_features: dict, user_id: str = None) -> dict:
