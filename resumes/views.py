@@ -353,7 +353,12 @@ class ResumeUploadView(APIView):
         except Exception as e:
             logger.error(f'[Resume] Sync parse failed for {resume.id}: {e}', exc_info=True)
             resume.parse_status = 'failed'
-            resume.parsed_data = {'error': str(e)}
+            # Try to at least save raw text for debugging
+            try:
+                raw = extract_text_from_file(file_path, ext)
+                resume.parsed_data = {'error': str(e), 'raw_text': raw[:3000]}
+            except Exception:
+                resume.parsed_data = {'error': str(e)}
             resume.save()
 
         return Response(resume.to_dict(), status=201)
