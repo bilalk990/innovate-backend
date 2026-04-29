@@ -405,7 +405,8 @@ class QuestionBankAIGenerateView(APIView):
 
         job_title = request.data.get('job_title', '').strip()
         job_description = request.data.get('job_description', '').strip()
-        count = min(int(request.data.get('count', 15)), 30)
+        # CRITICAL FIX: Reduce default count to 5 for Vercel serverless timeout
+        count = min(int(request.data.get('count', 5)), 10)  # Max 10 instead of 30
         categories = request.data.get('categories', [])
 
         if not job_title:
