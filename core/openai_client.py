@@ -104,15 +104,19 @@ def _call(prompt: str, user_id: str = None, response_format: str = "text", max_t
             logger.warning(f'[AI] Could not send quota warning notification: {notify_err}')
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
+        kwargs = {
+            "model": MODEL_NAME,
+            "messages": [
                 {"role": "system", "content": "You are a helpful AI assistant for HR and recruitment tasks."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=max_tokens
-        )
+            "temperature": 0.7,
+            "max_tokens": max_tokens
+        }
+        if response_format == "json":
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**kwargs)
         return response.choices[0].message.content.strip()
     except Exception as e:
         error_str = str(e).lower()
@@ -144,15 +148,39 @@ _call_openai = _call
 
 
 def _strip_json(text: str) -> str:
-    """Strip markdown code fences from AI responses before JSON parsing."""
+    """Extract JSON from text if it's wrapped in markers or conversational text."""
     text = text.strip()
-    if text.startswith('```'):
-        text = text[3:]
-        if text.lower().startswith('json'):
-            text = text[4:]
-        if text.endswith('```'):
-            text = text[:-3]
-    return text.strip()
+
+    # Try to find JSON block in markdown
+    if '```json' in text:
+        try:
+            return text.split('```json')[1].split('```')[0].strip()
+        except IndexError:
+            pass
+    elif '```' in text:
+        try:
+            parts = text.split('```')
+            if len(parts) >= 3:
+                return parts[1].strip()
+        except IndexError:
+            pass
+
+    # Fallback: Find the first [ or { and the last ] or }
+    first_bracket = text.find('[')
+    first_brace = text.find('{')
+
+    start = -1
+    if first_bracket != -1 and (first_brace == -1 or first_bracket < first_brace):
+        start = first_bracket
+        end = text.rfind(']')
+    elif first_brace != -1:
+        start = first_brace
+        end = text.rfind('}')
+
+    if start != -1 and end != -1:
+        return text[start:end+1].strip()
+
+    return text
 
 
 def check_ai_health() -> dict:
@@ -220,7 +248,7 @@ RESUME TEXT:
 {text_chunk}
 """
     try:
-        result_text = _call(prompt)
+        result_text = _call(prompt, response_format="json")
         stripped = _strip_json(result_text)
         parsed = json.loads(stripped)
 
@@ -279,21 +307,24 @@ You are an expert HR interviewer. Generate {num_questions} high-quality intervie
 CONTEXT:
 {context_str}
 
-Return ONLY a valid JSON array:
-[
-  {{
-    "text": "Question text",
-    "category": "technical" or "behavioral" or "general",
-    "expected_keywords": ["keyword1", "keyword2"],
-    "ideal_answer": "What a perfect candidate would say",
-    "difficulty": "easy" or "medium" or "hard"
-  }}
-]
+Return ONLY a valid JSON object with a "questions" key:
+{{
+  "questions": [
+    {{
+      "text": "Question text",
+      "category": "technical" or "behavioral" or "general",
+      "expected_keywords": ["keyword1", "keyword2"],
+      "ideal_answer": "What a perfect candidate would say",
+      "difficulty": "easy" or "medium" or "hard"
+    }}
+  ]
+}}
 """
     try:
-        result_text = _call(prompt, user_id=user_id)
+        result_text = _call(prompt, user_id=user_id, response_format="json")
         stripped = _strip_json(result_text)
-        questions = json.loads(stripped)
+        data = json.loads(stripped)
+        questions = data.get('questions', []) if isinstance(data, dict) else data
         return questions[:num_questions] if isinstance(questions, list) else []
     except Exception as e:
         logger.error(f'[GPT] Question generation failed: {e}')
@@ -760,21 +791,24 @@ Job Title: {job_title}
 {f'Job Description: {job_description[:500]}' if job_description else ''}
 Categories: {categories_str}
 
-Return a JSON array (no extra text):
-[
-  {{
-    "text": "Question text",
-    "category": "technical" | "behavioral" | "general",
-    "difficulty": "easy" | "medium" | "hard",
-    "expected_keywords": ["keyword1"],
-    "ideal_answer": "Brief ideal answer"
-  }}
-]
+Return a JSON object with a "questions" key:
+{{
+  "questions": [
+    {{
+      "text": "Question text",
+      "category": "technical" | "behavioral" | "general",
+      "difficulty": "easy" | "medium" | "hard",
+      "expected_keywords": ["keyword1"],
+      "ideal_answer": "Brief ideal answer"
+    }}
+  ]
+}}
 """
     try:
-        result_text = _call(prompt, user_id=user_id)
+        result_text = _call(prompt, user_id=user_id, response_format="json")
         stripped = _strip_json(result_text)
-        questions = json.loads(stripped)
+        data = json.loads(stripped)
+        questions = data.get('questions', []) if isinstance(data, dict) else data
         return questions[:num_questions] if isinstance(questions, list) else []
     except Exception as e:
         logger.error(f'[GPT] Question bank generation failed: {e}')

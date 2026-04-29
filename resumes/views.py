@@ -287,9 +287,17 @@ class ResumeUploadView(APIView):
         if ext not in allowed_extensions:
             return Response({'error': f'Unsupported file type. Use: {allowed_extensions}'}, status=400)
 
-        # Save file
+        # Save file (Handle read-only filesystem fallbacks for Vercel/Serverless)
         upload_dir = os.path.join(settings.MEDIA_ROOT, 'resumes', str(request.user.id))
-        os.makedirs(upload_dir, exist_ok=True)
+        try:
+            os.makedirs(upload_dir, exist_ok=True)
+        except OSError:
+            # Fallback to /tmp if media root is not writable (e.g. Vercel)
+            import tempfile
+            upload_dir = os.path.join(tempfile.gettempdir(), 'resumes', str(request.user.id))
+            os.makedirs(upload_dir, exist_ok=True)
+            logger.info(f'[Resume] Falling back to temporary directory for upload: {upload_dir}')
+
         filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.name}"
         file_path = os.path.join(upload_dir, filename)
         with open(file_path, 'wb+') as dest:
