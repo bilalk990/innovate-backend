@@ -800,34 +800,19 @@ def generate_question_bank_suggestions(
         num_questions = count
     categories_str = ', '.join(categories) if categories else category
 
-    prompt = f"""
-Generate {num_questions} interview questions for a Question Bank.
-
-Job Title: {job_title}
-{f'Job Description: {job_description[:500]}' if job_description else ''}
+    # CRITICAL FIX: Reduce max_tokens for faster response on Vercel serverless
+    prompt = f"""Generate {num_questions} interview questions for: {job_title}
+{f'Description: {job_description[:300]}' if job_description else ''}
 Categories: {categories_str}
 
-Return a JSON object with a "questions" key:
-{{
-  "questions": [
-    {{
-      "text": "Question text",
-      "category": "technical",
-      "difficulty": "medium",
-      "expected_keywords": ["keyword1"],
-      "ideal_answer": "Brief ideal answer"
-    }}
-  ]
-}}
-Ensure category is one of: technical, behavioral, general.
-Ensure difficulty is one of: easy, medium, hard.
-"""
+Return JSON:
+{{"questions": [{{"text": "...", "category": "technical|behavioral|general", "difficulty": "easy|medium|hard", "expected_keywords": ["..."], "ideal_answer": "..."}}]}}"""
     try:
         logger.info(f'[GPT] Question bank generation starting: job_title={job_title}, num_questions={num_questions}')
-        result_text = _call(prompt, user_id=user_id)
-        logger.info(f'[GPT] Raw AI response (first 500 chars): {result_text[:500]}')
+        # CRITICAL FIX: Reduce max_tokens for Vercel serverless timeout (10s limit)
+        result_text = _call(prompt, user_id=user_id, response_format="json", max_tokens=1500)
+        logger.info(f'[GPT] Raw AI response received (length: {len(result_text)})')
         stripped = _strip_json(result_text)
-        logger.info(f'[GPT] Stripped JSON (first 500 chars): {stripped[:500]}')
         data = json.loads(stripped)
         questions = data.get('questions', []) if isinstance(data, dict) else data
         result = questions[:num_questions] if isinstance(questions, list) else []
