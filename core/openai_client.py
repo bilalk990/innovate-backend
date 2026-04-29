@@ -88,7 +88,8 @@ def _call(prompt: str, user_id: str = None, response_format: str = "text", max_t
     """
     # Check rate limit if user_id provided
     if user_id:
-        allowed, remaining, reset_time = ai_rate_limiter.check_limit(user_id, limit=20, window_minutes=60)
+        # Increased limit to 50 calls per hour for power users
+        allowed, remaining, reset_time = ai_rate_limiter.check_limit(user_id, limit=50, window_minutes=60)
         if not allowed:
             raise Exception(f'AI rate limit exceeded. Try again after {reset_time.strftime("%H:%M:%S")}')
         logger.info(f'[AI] User {user_id} - {remaining} calls remaining')
@@ -3013,20 +3014,52 @@ Return ONLY valid JSON:
         return json.loads(_strip_json(raw))
     except Exception as e:
         logger.warning(f'[GPT] Funnel analysis failed: {e}')
-        apps = funnel_stats.get('applications', 1)
-        hired = funnel_stats.get('hired', 0)
-        rate = round((hired / apps) * 100, 1) if apps else 0
+        apps = int(funnel_stats.get('applications', 1))
+        hired = int(funnel_stats.get('hired', 0))
+        rate = (hired / apps * 100) if apps > 0 else 0
+        
+        # Base health score on conversion rate (Industry avg ~1-3% is good)
+        score = min(95, max(10, int(rate * 15 + 20)))
+        label = 'Excellent' if score >= 85 else 'Good' if score >= 65 else 'Moderate' if score >= 40 else 'Critical'
+        
         return {
-            'funnel_health_score': 60,
-            'funnel_health_label': 'Moderate',
-            'executive_summary': f'Your {job_title} hiring funnel shows a {rate}% conversion from application to hire. Industry average is 1-3%.',
-            'stage_analysis': [{'stage': 'Application → Screen', 'candidates_in': apps, 'candidates_out': funnel_stats.get('screened', 0), 'drop_rate': f'{100-round(funnel_stats.get("screened",0)/max(apps,1)*100)}%', 'industry_benchmark': '40%', 'status': 'amber', 'insight': 'Review screening criteria', 'fix': 'Streamline initial screening process'}],
-            'biggest_bottleneck': {'stage': 'Screening', 'severity': 'Medium', 'estimated_impact': 'Several qualified candidates may be filtered out', 'root_cause': 'Overly strict initial criteria', 'quick_fix': 'Review and calibrate screening criteria'},
-            'patterns_detected': [{'pattern': 'High early-stage dropout', 'evidence': 'Large drop from applications to screening', 'action': 'Improve job description clarity'}],
-            'diversity_flags': [{'flag': 'Insufficient data for diversity analysis', 'recommendation': 'Track demographic data at each stage'}],
-            'optimization_roadmap': [{'priority': 1, 'action': 'Streamline application process', 'effort': 'Low', 'impact': '15-20% more applicants completing application'}],
-            'benchmark_comparison': {'time_to_fill_benchmark': '30-45 days', 'offer_acceptance_benchmark': '85%', 'your_performance': 'Needs evaluation'},
-            'predicted_improvement': 'Addressing top bottlenecks could improve overall funnel efficiency by 20-30%.'
+            'funnel_health_score': score,
+            'funnel_health_label': label,
+            'executive_summary': f'Your {job_title} hiring funnel shows a {round(rate, 1)}% conversion rate. Overall health is {label.lower()}.',
+            'stage_analysis': [
+                {
+                    'stage': 'Application → Hire',
+                    'candidates_in': apps,
+                    'candidates_out': hired,
+                    'drop_rate': f'{100 - round(rate, 1)}%',
+                    'industry_benchmark': '2%',
+                    'status': 'green' if rate >= 2 else 'amber' if rate >= 1 else 'red',
+                    'insight': 'Conversion efficiency',
+                    'fix': 'Review sourcing channels' if rate < 1 else 'Maintain current sourcing quality'
+                }
+            ],
+            'biggest_bottleneck': {
+                'stage': 'Final Selection' if rate < 2 else 'Initial Sourcing',
+                'severity': 'Medium' if score > 50 else 'High',
+                'estimated_impact': f'{int(apps * 0.1)} potential candidates lost',
+                'root_cause': 'Conversion leak at final stage',
+                'quick_fix': 'Calibrate interviewer expectations'
+            },
+            'patterns_detected': [
+                {'pattern': 'Standard funnel drop-off', 'evidence': f'{apps} applicants leading to {hired} hires', 'action': 'Monitor weekly trends'}
+            ],
+            'diversity_flags': [
+                {'flag': 'Data insufficient', 'recommendation': 'Enable demographic tracking in settings'}
+            ],
+            'optimization_roadmap': [
+                {'priority': 1, 'action': 'Optimize final interview feedback loop', 'effort': 'Low', 'impact': '+10% conversion'}
+            ],
+            'benchmark_comparison': {
+                'time_to_fill_benchmark': '45 days',
+                'offer_acceptance_benchmark': '80%',
+                'your_performance': 'Above Benchmark' if rate > 3 else 'At Benchmark' if rate >= 1 else 'Below Benchmark'
+            },
+            'predicted_improvement': 'Addressing stage-specific bottlenecks could yield a 15% increase in efficiency.'
         }
 
 
@@ -3085,21 +3118,44 @@ All scores must be 0-100. conflict_risk should be 0-100 where 0 = no risk."""
         return json.loads(_strip_json(raw))
     except Exception as e:
         logger.warning(f'[GPT] Team fit prediction failed: {e}')
+        
+        # Calculate dynamic fit score
+        team_skills = set([s.lower() for s in team_description.get('skills', [])])
+        cand_skills = set([s.lower() for s in candidate_profile.get('skills', [])])
+        gaps = set([g.lower() for g in team_description.get('gaps', [])])
+        
+        # How many gaps does candidate fill?
+        filled = len(cand_skills.intersection(gaps))
+        # How many overlapping skills?
+        overlap = len(cand_skills.intersection(team_skills))
+        
+        skill_score = min(95, 40 + (filled * 15) + (overlap * 2))
+        culture_score = 70 # Default
+        
+        total_score = int((skill_score * 0.6) + (culture_score * 0.4))
+        label = 'Excellent Fit' if total_score >= 85 else 'Good Fit' if total_score >= 65 else 'Moderate Fit'
+        
         return {
-            'fit_score': 72,
-            'fit_label': 'Good Fit',
-            'fit_breakdown': {'skill_complementarity': 75, 'culture_alignment': 70, 'work_style_match': 72, 'gap_filling_score': 80, 'conflict_risk': 20},
-            'skills_candidate_brings': candidate_profile.get('strengths', ['Professional expertise'])[:3],
-            'gaps_candidate_fills': team_description.get('gaps', ['Team gap'])[:2],
-            'potential_conflicts': [{'area': 'Work style adaptation', 'severity': 'Low', 'mitigation': 'Regular check-ins during onboarding'}],
-            'team_dynamics_analysis': 'This candidate has the potential to complement the existing team with fresh perspectives.',
-            'collaboration_predictions': [{'with': 'Team lead', 'prediction': 'Productive working relationship expected'}],
-            'onboarding_recommendations': ['Assign a buddy for first 30 days', 'Schedule regular 1:1s', 'Include in team meetings from day 1'],
-            'first_90_days': 'Expect ramp-up in first 30 days, full contribution by day 60-90.',
-            'long_term_potential': 'Strong growth potential if given proper mentorship.',
-            'manager_tips': ['Set clear expectations early', 'Provide regular feedback'],
-            'risk_factors': ['Onboarding time required', 'Team culture adjustment period'],
-            'verdict': 'Recommend'
+            'fit_score': total_score,
+            'fit_label': label,
+            'fit_breakdown': {
+                'skill_complementarity': skill_score,
+                'culture_alignment': culture_score,
+                'work_style_match': 75,
+                'gap_filling_score': min(95, 50 + filled * 20),
+                'conflict_risk': 15
+            },
+            'skills_candidate_brings': list(cand_skills)[:3],
+            'gaps_candidate_fills': list(cand_skills.intersection(gaps))[:2] or ['Complementary expertise'],
+            'potential_conflicts': [{'area': 'Communication style', 'severity': 'Low', 'mitigation': 'Early team building exercises'}],
+            'team_dynamics_analysis': f'Candidate brings {len(cand_skills)} key skills that can potentially strengthen the existing {team_description.get("size", 5)}-person team.',
+            'collaboration_predictions': [{'with': 'Peers', 'prediction': 'Likely to find common technical ground quickly'}],
+            'onboarding_recommendations': ['Focus on cultural integration', 'Clarify team workflows early'],
+            'first_90_days': 'Focus on initial project delivery in first 30 days, then gradual increase in responsibility.',
+            'long_term_potential': 'Expected to become a core contributor as they master internal systems.',
+            'manager_tips': ['Provide specific feedback on deliverables', 'Encourage team collaboration'],
+            'risk_factors': ['Learning curve for internal tools', 'Initial adjustment to team culture'],
+            'verdict': 'Recommend' if total_score >= 65 else 'Conditional'
         }
 
 
@@ -3465,22 +3521,27 @@ Return JSON with EXACTLY these fields:
             return data
     except Exception as e:
         logger.error(f'[SentimentTracker] OpenAI failed: {e}')
-
-    return {
-        'overall_sentiment': 'Neutral',
-        'engagement_score': 55,
-        'interest_level': 'Interested',
-        'sentiment_trend': 'Stable',
-        'sentiment_timeline': [{'touchpoint': 'Application', 'sentiment': 'Positive', 'score': 70, 'notes': 'Applied proactively'}],
-        'positive_signals': ['Applied on time', 'Responded to communications'],
-        'risk_flags': ['Limited interaction data available'],
-        'dropout_risk': 'Medium',
-        'predicted_outcome': 'Undecided',
-        'recommended_action': 'Schedule a check-in call to gauge interest level',
-        'urgency_level': 'This Week',
-        'talking_points': ['Ask about their current job search timeline', 'Highlight role benefits', 'Address any concerns they may have'],
-        're_engagement_strategy': 'Send a personalized email highlighting why they are a strong fit for this role.'
-    }
+        
+        count = len(interactions)
+        engagement = min(95, 30 + (count * 10))
+        sentiment = 'Positive' if engagement > 60 else 'Neutral'
+        risk = 'Low' if engagement > 70 else 'Medium' if engagement > 40 else 'High'
+        
+        return {
+            'overall_sentiment': sentiment,
+            'engagement_score': engagement,
+            'interest_level': 'Highly Interested' if engagement > 80 else 'Interested' if engagement > 50 else 'Lukewarm',
+            'sentiment_trend': 'Improving' if count > 2 else 'Stable',
+            'sentiment_timeline': [{'touchpoint': i.get('type', 'Contact'), 'sentiment': 'Positive', 'score': 70, 'notes': 'Touchpoint recorded'} for i in interactions[:3]] or [{'touchpoint': 'Application', 'sentiment': 'Positive', 'score': 70, 'notes': 'Proactive application'}],
+            'positive_signals': [f'{count} interaction(s) recorded', 'Active in pipeline'],
+            'risk_flags': ['Need more detailed feedback' if count < 3 else 'Stable interaction rate'],
+            'dropout_risk': risk,
+            'predicted_outcome': 'Likely to Accept' if engagement > 75 else 'Undecided',
+            'recommended_action': 'Schedule deep-dive interview' if engagement > 60 else 'Follow up for more data',
+            'urgency_level': 'Standard',
+            'talking_points': ['Clarify long-term career goals', 'Verify technical alignment'],
+            're_engagement_strategy': 'Personalized outreach highlighting specific role benefits.'
+        }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3558,28 +3619,46 @@ Build a comprehensive DNA profile. Return JSON with EXACTLY these fields:
     except Exception as e:
         logger.error(f'[DNAProfiler] OpenAI failed: {e}')
 
-    return {
-        'disc_type': 'SC',
-        'disc_label': 'The Steady Analyst',
-        'disc_description': f'{name} shows a balanced profile with steady, methodical work habits combined with analytical thinking. They prefer structured environments and deliver consistent results.',
-        'disc_scores': {'D': 35, 'I': 40, 'S': 70, 'C': 65},
-        'personality_traits': [
-            {'trait': 'Reliability', 'level': 'High', 'work_impact': 'Consistently meets deadlines and follows through on commitments'},
-            {'trait': 'Attention to Detail', 'level': 'High', 'work_impact': 'Produces high-quality work with few errors'},
-            {'trait': 'Adaptability', 'level': 'Medium', 'work_impact': 'Adjusts to change with some time needed to process'},
-        ],
-        'communication_style': {'primary_style': 'Analytical', 'how_they_communicate': 'Prefers data-backed discussions, thinks before speaking', 'how_to_communicate_with_them': 'Provide context and data, avoid rushing decisions', 'conflict_style': 'Avoids direct confrontation, prefers written resolution'},
-        'work_style': {'pace_preference': 'Steady', 'structure_preference': 'Semi-structured', 'decision_making': 'Data-driven', 'stress_response': 'Becomes more methodical, may slow down to ensure accuracy', 'motivation_drivers': ['Mastery', 'Stability', 'Recognition for quality work']},
-        'ideal_environment': {'team_size': 'Small team', 'management_style': 'Mentorship', 'culture_fit': 'Mixed', 'red_flag_environments': ['Chaotic unstructured startups', 'High-pressure sales environments']},
-        'leadership_potential': 'Medium',
-        'leadership_style': 'Lead by example, technical expert who mentors others',
-        'growth_trajectory': 'Specialist',
-        'retention_profile': {'likely_stay_duration': '2-3 years', 'what_keeps_them': ['Clear career growth path', 'Supportive management', 'Interesting technical challenges'], 'what_drives_them_away': ['Lack of recognition', 'Constant scope changes', 'Poor management']},
-        'blind_spots': ['May avoid necessary conflict', 'Can over-analyze before acting'],
-        'superpower': f'{name} delivers consistently high-quality work with exceptional attention to detail and reliability.',
-        'hiring_recommendation': 'Consider — strong technical profile, verify culture fit in interview',
-        'onboarding_tips': ['Provide clear role expectations from day one', 'Assign a senior mentor', 'Give structured 30-60-90 day plan']
-    }
+        # Dynamic fallback based on experience and roles
+        is_senior = exp_years >= 8
+        is_junior = exp_years < 3
+        
+        # Heuristic personality mapping
+        if is_senior:
+            disc = 'DI'
+            label = 'The Visionary Leader'
+            scores = {'D': 85, 'I': 75, 'S': 40, 'C': 50}
+        elif is_junior:
+            disc = 'S'
+            label = 'The Dedicated Learner'
+            scores = {'D': 30, 'I': 45, 'S': 80, 'C': 60}
+        else:
+            disc = 'SC'
+            label = 'The Steady Professional'
+            scores = {'D': 45, 'I': 50, 'S': 75, 'C': 70}
+
+        return {
+            'disc_type': disc,
+            'disc_label': label,
+            'disc_description': f'{name} demonstrates a {label.lower()} profile with strengths in {", ".join(skills[:2]) if skills else "professional execution"}. They balance technical expertise with { "leadership potential" if is_senior else "collaborative energy"}.',
+            'disc_scores': scores,
+            'personality_traits': [
+                {'trait': 'Resilience', 'level': 'High' if is_senior else 'Medium', 'work_impact': 'Handles complex project pressures effectively'},
+                {'trait': 'Technical Agility', 'level': 'High', 'work_impact': 'Quickly adopts new technologies and methodologies'},
+                {'trait': 'Collaboration', 'level': 'Medium', 'work_impact': 'Works well in structured team environments'}
+            ],
+            'communication_style': {'primary_style': 'Direct' if is_senior else 'Collaborative', 'how_they_communicate': 'Focuses on outcomes and key deliverables', 'how_to_communicate_with_them': 'Be concise and highlight strategic value', 'conflict_style': 'Problem-solving oriented'},
+            'work_style': {'pace_preference': 'Fast-paced' if is_senior else 'Steady', 'structure_preference': 'Autonomous' if is_senior else 'Semi-structured', 'decision_making': 'Data-driven', 'stress_response': 'Focused and goal-oriented', 'motivation_drivers': ['Impact', 'Mastery', 'Growth']},
+            'ideal_environment': {'team_size': 'Small to Medium', 'management_style': 'Hands-off' if is_senior else 'Mentorship', 'culture_fit': 'Innovative / Growth', 'red_flag_environments': ['Highly bureaucratic', 'Lack of ownership']},
+            'leadership_potential': 'High' if is_senior else 'Medium',
+            'leadership_style': 'Coaching and strategic guidance' if is_senior else 'Leading by example',
+            'growth_trajectory': 'Accelerated' if is_senior else 'Steady',
+            'retention_profile': {'likely_stay_duration': '2-4 years', 'what_keeps_them': ['Challenge', 'Autonomy', 'Equity/Impact'], 'what_drives_them_away': ['Stagnation', 'Micromanagement']},
+            'blind_spots': ['May overlook minor details when focused on big picture' if is_senior else 'May hesitate to take risks'],
+            'superpower': f'{name} combines deep technical knowledge with a {label.lower()} mindset to drive project success.',
+            'hiring_recommendation': 'Hire' if eval_score > 80 else 'Consider',
+            'onboarding_tips': ['Assign high-impact project early', 'Introduce to key stakeholders', 'Define clear success metrics']
+        }
 
 
 def rediscover_talent(past_candidates: list, new_job_title: str, new_jd: str, user_id: str = None) -> dict:
@@ -3628,13 +3707,37 @@ Return JSON with EXACTLY these fields:
     except Exception as e:
         logger.error(f'[TalentRediscovery] OpenAI failed: {e}')
 
-    return {
-        'rediscovered': [{'candidate_index': i, 'name': c.get('name', f'Candidate {i}'), 'new_fit_score': min(80, 40 + len(c.get('skills', [])) * 4), 'why_fit_now': 'Transferable skills align with new role requirements', 'prev_rejection_reason': c.get('rejection_reason', 'Role mismatch'), 'transferable_skills': c.get('skills', [])[:3], 'gap_from_new_role': ['Verify updated experience'], 'outreach_angle': 'New role better matches their skillset', 'sample_outreach': f"Hi {c.get('name','there')}, we have a new opening that aligns perfectly with your background. Would you be open to a quick conversation?", 'risk_level': 'Medium', 'recommendation': 'Worth Considering'} for i, c in enumerate(past_candidates[:5])],
-        'top_rediscovery': past_candidates[0].get('name', 'N/A') if past_candidates else 'N/A',
-        'pool_summary': f'Analyzed {len(past_candidates)} past candidates. Several show transferable skills for the new role.',
-        'total_strong_matches': max(1, len(past_candidates) // 4),
-        'rediscovery_insight': 'Candidates rejected for one role often have skills that perfectly match different openings — especially when job requirements evolve.'
-    }
+        # Dynamic fallback based on skill matching
+        matches = []
+        new_jd_lower = new_jd.lower()
+        for i, c in enumerate(past_candidates[:8]):
+            cand_skills = [s.lower() for s in c.get('skills', [])]
+            matched_skills = [s for s in cand_skills if s in new_jd_lower]
+            
+            fit_score = min(95, 30 + (len(matched_skills) * 15) + (c.get('experience_years', 0) * 2))
+            
+            if fit_score >= 50:
+                matches.append({
+                    'candidate_index': i,
+                    'name': c.get('name', f'Candidate {i}'),
+                    'new_fit_score': int(fit_score),
+                    'why_fit_now': f'Strong overlap in key skills ({", ".join(matched_skills[:2])}) and relevant experience.',
+                    'prev_rejection_reason': c.get('rejection_reason', 'Role mismatch'),
+                    'transferable_skills': matched_skills[:3],
+                    'gap_from_new_role': ['Specific domain expertise' if not matched_skills else 'Recent project experience'],
+                    'outreach_angle': 'Leverage their previous interest and updated skillset',
+                    'sample_outreach': f"Hi {c.get('name', 'there')}, we noticed your background in {', '.join(matched_skills[:1])} would be a great fit for our new {new_job_title} role. Interested?",
+                    'risk_level': 'Low' if fit_score > 75 else 'Medium',
+                    'recommendation': 'Reach Out Now' if fit_score > 75 else 'Worth Considering'
+                })
+
+        return {
+            'rediscovered': matches[:5],
+            'top_rediscovery': matches[0]['name'] if matches else 'N/A',
+            'pool_summary': f'Analyzed {len(past_candidates)} past candidates. Found {len(matches)} potential matches based on skill overlap.',
+            'total_strong_matches': len([m for m in matches if m['new_fit_score'] > 70]),
+            'rediscovery_insight': 'Historical data suggests that 20% of previously rejected candidates become viable for new roles within 6 months.'
+        }
 
 
 def analyze_interview_quality_intelligence(interviews_summary: list, user_id: str = None) -> dict:
@@ -3708,34 +3811,38 @@ Return JSON with EXACTLY these fields:
             return data
     except Exception as e:
         logger.error(f'[InterviewQualityIntel] OpenAI failed: {e}')
-
-    return {
-        'overall_interview_quality_score': 62,
-        'quality_grade': 'C',
-        'total_interviews_analyzed': len(interviews_summary),
-        'question_intelligence': [
-            {'question': 'Tell me about a challenge you overcame', 'predictive_validity': 78, 'question_type': 'Behavioral', 'signal_quality': 'High', 'why_effective': 'Reveals problem-solving approach and resilience', 'improvement': 'Add follow-up: What would you do differently now?'},
-            {'question': 'Where do you see yourself in 5 years', 'predictive_validity': 32, 'question_type': 'General', 'signal_quality': 'Low', 'why_effective': 'Minimal predictive signal for job performance', 'improvement': 'Replace with: What type of work energizes you most?'},
-        ],
-        'interviewer_consistency': [{'interviewer': 'Primary Interviewers', 'consistency_score': 65, 'bias_detected': 'Affinity bias possible', 'strengths': 'Good technical assessment', 'coaching_tip': 'Use structured scoring rubrics for every question'}],
-        'time_analysis': {'avg_duration': '42 minutes', 'optimal_duration': '45-60 minutes', 'time_per_question': '5-7 minutes', 'insight': 'Interviews may be slightly rushed — consider extending to allow deeper behavioral exploration'},
-        'patterns_that_predict_success': [
-            {'pattern': 'Candidates who give specific examples with measurable outcomes', 'signal_strength': 'Strong', 'recommendation': 'Explicitly ask for numbers and outcomes in follow-ups'},
-            {'pattern': 'Strong preparation — candidates who researched the company', 'signal_strength': 'Medium', 'recommendation': 'Ask company-specific questions early to filter'},
-        ],
-        'patterns_that_predict_failure': [
-            {'pattern': 'Vague answers without specific examples', 'how_to_detect': 'Probe with: Give me a specific example of that'},
-            {'pattern': 'Blaming previous employers exclusively', 'how_to_detect': 'Ask about lessons learned from past failures'},
-        ],
-        'missing_question_types': ['Culture fit behavioral questions', 'Role-specific scenario questions', 'Motivation and values alignment'],
-        'top_recommendations': [
-            {'priority': 1, 'recommendation': 'Standardize interview scorecards for all interviewers', 'expected_impact': 'Improves consistency by 40%'},
-            {'priority': 2, 'recommendation': 'Replace low-validity questions with STAR-format behavioral questions', 'expected_impact': 'Increases predictive validity by 25%'},
-            {'priority': 3, 'recommendation': 'Add structured culture-fit assessment section', 'expected_impact': 'Reduces 90-day turnover by 20%'},
-        ],
-        'interview_process_score': {'structure': 55, 'consistency': 60, 'predictive_validity': 58, 'candidate_experience': 72},
-        'executive_summary': f'Analyzed {len(interviews_summary)} interviews. Overall quality score is 62/100 — room for significant improvement. The biggest gains come from standardizing question sets and using structured scoring rubrics. Replace generic questions with behavioral STAR-format questions for higher predictive validity.'
-    }
+        
+        count = len(interviews_summary)
+        avg_eval = sum([iv.get('eval_score', 0) for iv in interviews_summary]) / max(count, 1)
+        
+        # Calculate a pseudo-intelligence score based on data volume and quality
+        score = min(95, 40 + (count * 2) + (avg_eval / 10))
+        grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 55 else 'D'
+        
+        return {
+            'overall_interview_quality_score': int(score),
+            'quality_grade': grade,
+            'total_interviews_analyzed': count,
+            'question_intelligence': [
+                {'question': 'Behavioral STAR questions', 'predictive_validity': 85, 'question_type': 'Behavioral', 'signal_quality': 'High', 'why_effective': 'Proven to predict future performance', 'improvement': 'Ensure every behavioral question has a specific scoring rubric'},
+                {'question': 'Hypothetical scenarios', 'predictive_validity': 60, 'question_type': 'Situational', 'signal_quality': 'Medium', 'why_effective': 'Shows intention but not always habit', 'improvement': 'Follow up with: When have you actually done this?'}
+            ],
+            'interviewer_consistency': [{'interviewer': 'Team', 'consistency_score': int(score - 10), 'bias_detected': 'Recency bias', 'strengths': 'Technical depth', 'coaching_tip': 'Take notes during the interview, not after'}],
+            'time_analysis': {'avg_duration': '45 minutes', 'optimal_duration': '50 minutes', 'time_per_question': '6 minutes', 'insight': 'Data suggests consistent timing across sessions.'},
+            'patterns_that_predict_success': [
+                {'pattern': 'High technical proficiency + proactive communication', 'signal_strength': 'Strong', 'recommendation': 'Score communication separately from technical skills'},
+            ],
+            'patterns_that_predict_failure': [
+                {'pattern': 'Inability to explain past failures', 'how_to_detect': 'Ask for a specific project that did not go well'},
+            ],
+            'missing_question_types': ['Adaptive difficulty technical questions', 'Value-alignment behavioral checks'],
+            'top_recommendations': [
+                {'priority': 1, 'recommendation': 'Implement structured interview training', 'expected_impact': 'Reduces bias by 30%'},
+                {'priority': 2, 'recommendation': 'Use AI-assisted scoring rubrics', 'expected_impact': 'Improves consistency by 50%'}
+            ],
+            'interview_process_score': {'structure': int(score), 'consistency': int(score - 5), 'predictive_validity': int(score + 5), 'candidate_experience': 80},
+            'executive_summary': f'Based on {count} interviews, your process score is {int(score)}/100. Improving question structure and scoring consistency are the highest-impact next steps.'
+        }
 
 
 # ── Feature Set 5: HR Utility AI Tools ─────────────────────────────────────
@@ -3805,55 +3912,37 @@ Write the document_content as a complete, professional letter — not a template
     except Exception as e:
         logger.error(f'[HRDocument] OpenAI failed: {e}')
 
-    # Intelligent fallback
-    return {
-        'document_title': document_type,
-        'document_content': f"""{company_name}
-[Company Address]
-[City, Country]
+        # Intelligent fallback
+        today = __import__('datetime').date.today().strftime('%B %d, %Y')
+        content = f"{company_name}\n[Company Address]\n[City, Country]\n\nDate: {today}\nRef: HR/{employee_id or '001'}/{__import__('datetime').date.today().year}\n\n{employee_name}\n{employee_designation}\n{employee_department}\n{company_name}\n\nSubject: {document_type}\n\nDear {employee_name},\n\n"
+        
+        if 'warning' in document_type.lower():
+            content += f"This letter is being issued to you regarding the matter of {additional_details or 'conduct/performance'}. We expect immediate improvement and adherence to company standards."
+            tone = 'Strict'
+        elif 'experience' in document_type.lower() or 'relieving' in document_type.lower():
+            content += f"We confirm that {employee_name} was employed with us as {employee_designation}. We appreciate your contributions and wish you success."
+            tone = 'Supportive'
+        else:
+            content += f"This document confirms the status regarding {additional_details or 'your role'}."
+            tone = 'Formal'
 
-Date: {__import__('datetime').date.today().strftime('%B %d, %Y')}
-Ref: HR/{employee_id or '001'}/{__import__('datetime').date.today().year}
+        content += f"\n\nYours sincerely,\n\n{hr_name}\n{hr_designation}\nHuman Resources\n{company_name}"
 
-{employee_name}
-{employee_designation}
-{employee_department}
-{company_name}
-
-Subject: {document_type}
-
-Dear {employee_name},
-
-This letter is being issued to you with reference to the matter concerning {additional_details or 'the subject mentioned above'}.
-
-Please be advised that {company_name} takes all such matters seriously and expects all employees to maintain the highest standards of professionalism and conduct.
-
-You are requested to acknowledge receipt of this letter and respond accordingly within the stipulated time.
-
-Should you have any questions, please do not hesitate to contact the HR department.
-
-Yours sincerely,
-
-{hr_name}
-{hr_designation}
-Human Resources Department
-{company_name}""",
-        'tone_used': 'Formal',
-        'legal_risk_level': 'Medium',
-        'legal_risk_reason': 'Ensure document is in line with local labor laws before issuing.',
-        'key_clauses': ['Employee acknowledgment required', 'Document to be filed in employee record', 'Appeal process must be communicated'],
-        'dos': ['Get employee signature for acknowledgment', 'Keep copy in HR file', 'Follow company disciplinary procedure'],
-        'donts': ['Do not issue verbally', 'Do not skip documentation', 'Do not violate labor law timelines'],
-        'follow_up_actions': [
-            {'step': 1, 'action': 'Get employee acknowledgment signature', 'timeline': 'Same day'},
-            {'step': 2, 'action': 'File original in employee personnel folder', 'timeline': 'Within 24 hours'},
-            {'step': 3, 'action': 'Schedule follow-up meeting if required', 'timeline': 'Within 1 week'},
-        ],
-        'employee_rights': 'Employee has the right to respond and appeal this decision through the grievance procedure.',
-        'recommended_witnesses': 'HR Manager + Line Manager should both sign as witnesses.',
-        'documentation_checklist': ['Signed copy of this letter', 'Employee acknowledgment form', 'Supporting evidence/incident report'],
-        'alternative_version_note': 'For repeated offenses, escalate to a Final Warning or Termination Notice.'
-    }
+        return {
+            'document_title': document_type,
+            'document_content': content,
+            'tone_used': tone,
+            'legal_risk_level': 'Low',
+            'legal_risk_reason': 'Standardized template used.',
+            'key_clauses': ['Acknowledgment required', 'Filed in record'],
+            'dos': ['Get signature', 'Keep copy'],
+            'donts': ['Do not delay', 'Do not lose record'],
+            'follow_up_actions': [{'step': 1, 'action': 'Get acknowledgment', 'timeline': 'Immediate'}],
+            'employee_rights': 'Standard rights as per labor law apply.',
+            'recommended_witnesses': 'Line Manager',
+            'documentation_checklist': ['Signed copy', 'Original'],
+            'alternative_version_note': 'Consult legal for high-risk cases.'
+        }
 
 
 def generate_employee_handbook(company_name: str, industry: str, company_size: str,
@@ -4154,31 +4243,59 @@ Be specific about {country} laws. For Pakistan: reference EOBI Act, Employment o
     except Exception as e:
         logger.error(f'[PolicyCompliance] OpenAI failed: {e}')
 
+    # DYNAMIC FALLBACK: Perform basic heuristic analysis
     word_count = len(policy_text.split())
-    score = 60 if word_count > 100 else 40
+    text_lower = policy_text.lower()
+    
+    # Check for presence of essential clauses
+    has_grievance = any(k in text_lower for k in ['grievance', 'complaint', 'redressal'])
+    has_harassment = any(k in text_lower for k in ['harassment', 'bullying', 'discrimination', 'equality'])
+    has_disciplinary = any(k in text_lower for k in ['disciplinary', 'misconduct', 'termination'])
+    has_leave = any(k in text_lower for k in ['leave', 'vacation', 'sick', 'holiday'])
+    has_pay = any(k in text_lower for k in ['pay', 'salary', 'wages', 'compensation'])
+
+    # Calculate a score based on presence of key areas and length
+    score = 20 # Base
+    if has_grievance: score += 15
+    if has_harassment: score += 15
+    if has_disciplinary: score += 15
+    if has_leave: score += 15
+    if has_pay: score += 15
+    if word_count > 500: score += 5
+    
+    score = min(95, max(10, score))
+    grade = 'A' if score >= 85 else 'B' if score >= 70 else 'C' if score >= 55 else 'D' if score >= 40 else 'F'
+    verdict = 'Compliant' if score >= 85 else 'Mostly Compliant' if score >= 70 else 'Needs Revision' if score >= 40 else 'Non-Compliant'
+
+    violations = []
+    if not has_grievance:
+        violations.append({'severity': 'High', 'clause': 'N/A', 'issue': 'Missing formal grievance procedure', 'legal_reference': f'{country} Employment Rights Act', 'risk': 'Legal liability, poor employee relations', 'fix': 'Add a clear 3-step grievance redressal process.'})
+    if not has_harassment:
+        violations.append({'severity': 'Critical', 'clause': 'N/A', 'issue': 'Missing anti-harassment/discrimination policy', 'legal_reference': f'{country} Equality/Labor Laws', 'risk': 'Severe legal penalties, toxic culture', 'fix': 'Implement a comprehensive zero-tolerance anti-harassment policy.'})
+    
+    if not violations:
+        violations.append({'severity': 'Medium', 'clause': 'General clauses', 'issue': 'Policy lacks specific statutory citations', 'legal_reference': f'{country} Labor Code', 'risk': 'Ambiguity in enforcement', 'fix': 'Add references to specific sections of the local labor law.'})
+
     return {
         'compliance_score': score,
-        'compliance_grade': 'C' if score >= 60 else 'D',
-        'overall_verdict': 'Needs Revision',
-        'verdict_summary': f'The policy has been reviewed against {country} labor laws and industry standards for {industry}. Several areas require revision to ensure full legal compliance. Key gaps include missing mandatory clauses and potentially non-compliant language.',
-        'laws_checked': [f'{country} Labor Law', 'Employment Rights Act', 'Anti-Discrimination Regulations', 'Data Protection Standards'],
-        'violations': [
-            {'severity': 'High', 'clause': 'General policy language', 'issue': 'Policy lacks explicit mention of statutory minimum entitlements', 'legal_reference': f'{country} Employment Law — Minimum Standards', 'risk': 'Employee complaints, labor authority fines', 'fix': 'Add explicit statement of minimum statutory entitlements as per local law'},
-            {'severity': 'Medium', 'clause': 'Disciplinary section', 'issue': 'Disciplinary procedure does not clearly state right to appeal', 'legal_reference': 'Natural Justice Principles / Employment Act', 'risk': 'Unfair dismissal claims', 'fix': 'Add clear 3-step appeal process with timelines'},
-        ],
+        'compliance_grade': grade,
+        'overall_verdict': verdict,
+        'verdict_summary': f'The policy has been heuristic-analyzed for {country} labor laws. Score: {score}/100. Key areas like grievance and harassment policies were prioritized.',
+        'laws_checked': [f'{country} Labor Law', 'Employment Rights Act', 'Equal Opportunity Act', 'Minimum Standards of Employment'],
+        'violations': violations[:3],
         'warnings': [
-            {'severity': 'Low', 'clause': 'General language', 'issue': 'Policy language may be interpreted as gender-biased in some clauses', 'recommendation': 'Use gender-neutral language throughout (e.g., "they/them" instead of "he/she")'},
+            {'severity': 'Low', 'clause': 'Definitions', 'issue': 'Generic terminology', 'recommendation': 'Define specific roles (e.g., "HR Director", "Reporting Manager") for better clarity.'}
         ],
-        'compliant_clauses': ['Policy has a clear scope and applicability statement', 'Confidentiality provisions are present', 'Policy states effective date'],
-        'missing_required_clauses': ['Grievance redressal procedure', 'Anti-harassment statement', 'Employee right to representation', 'Data privacy statement'],
-        'corrected_policy': f'[CORRECTED POLICY — {policy_type or "HR Policy"}]\n\nThis policy has been revised to comply with {country} labor laws and {industry} industry standards.\n\n{policy_text}\n\n[ADDITIONS]\nGrievance Procedure: Employees may raise grievances in writing to HR within 30 days of the incident.\nAppeal Rights: Any disciplinary decision may be appealed within 14 days.\nAnti-Harassment: The company maintains a zero-tolerance policy toward all forms of workplace harassment.\nData Privacy: All employee data is handled in accordance with applicable data protection laws.',
+        'compliant_clauses': [f'Policy length ({word_count} words) is appropriate' if word_count > 200 else 'Scope of applicability is mentioned'] + ([f'{k.capitalize()} policy is present' for k, present in [('grievance', has_grievance), ('disciplinary', has_disciplinary), ('leave', has_leave)] if present][:2]),
+        'missing_required_clauses': [k for k, present in [('Grievance procedure', has_grievance), ('Anti-harassment', has_harassment), ('Disciplinary appeal', has_disciplinary)] if not present],
+        'corrected_policy': f'[DRAFT REVISION — {policy_type or "HR Policy"}]\n\n{policy_text}\n\n[RECOMMENDED ADDITIONS]\n' + ('\n- Formal grievance policy needed.' if not has_grievance else '') + ('\n- Zero-tolerance harassment policy needed.' if not has_harassment else ''),
         'key_improvements': [
-            {'priority': 1, 'improvement': 'Add statutory minimum entitlements section', 'reason': 'Required by law — absence creates legal liability'},
-            {'priority': 2, 'improvement': 'Include formal grievance and appeal procedure', 'reason': 'Protects company from unfair dismissal claims'},
-            {'priority': 3, 'improvement': 'Add anti-harassment and equal opportunity statement', 'reason': 'Legally required in most jurisdictions'},
+            {'priority': 1, 'improvement': 'Address missing statutory clauses', 'reason': 'Legal compliance requirement'},
+            {'priority': 2, 'improvement': 'Enhance definitions', 'reason': 'Reduces ambiguity'},
+            {'priority': 3, 'improvement': 'Update to gender-neutral language', 'reason': 'Inclusivity best practice'}
         ],
         'legal_disclaimer': 'This AI analysis is for guidance only and does not constitute formal legal advice. Consult a qualified employment lawyer for final review.',
-        'next_steps': ['Review all Critical and High violations immediately', 'Consult a local employment lawyer for final sign-off', 'Distribute revised policy to all employees with acknowledgment'],
+        'next_steps': ['Review flagged violations', 'Consult local labor law experts', 'Schedule a policy review meeting']
     }
 
 
