@@ -878,24 +878,29 @@ def suggest_interview_slots(
     preferred_days: list = None
 ) -> dict:
     """AI-powered suggestion of optimal interview time slots."""
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    current_date_str = now.strftime("%A, %b %d, %Y")
     existing_count = len(existing_interviews) if existing_interviews else 0
 
     prompt = f"""
-Suggest 5 optimal interview time slots.
+Suggest 5 optimal interview time slots. 
+TODAY IS: {current_date_str}
+ONLY suggest slots in the FUTURE.
 
 Job: {job_title}
 Duration: {duration_minutes} minutes
 Recruiter TZ: {recruiter_timezone}
 Candidate TZ: {candidate_timezone}
 Existing interviews: {existing_count}
-Preferred days: {preferred_days or ['Monday', 'Tuesday', 'Wednesday', 'Thursday']}
+Preferred days: {preferred_days or ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']}
 
 Return JSON:
 {{
   "suggested_slots": [
     {{
-      "datetime_utc": "2026-04-12T09:00:00",
-      "day_label": "Friday, Apr 12",
+      "datetime_utc": "2026-05-01T09:00:00",
+      "day_label": "Friday, May 01",
       "time_recruiter": "2:00 PM",
       "time_candidate": "9:00 AM",
       "quality_score": 95,
@@ -907,17 +912,21 @@ Return JSON:
 }}
 """
     try:
-        return json.loads(_strip_json(_call(prompt)))
+        res = _call(prompt, response_format="json")
+        return json.loads(_strip_json(res))
     except Exception as e:
         logger.warning(f'[GPT] Slot suggestion failed: {e}')
-        # Generate 3 standard slots starting from next Monday
-        from datetime import datetime, timedelta
+        # Generate 3 standard slots starting from tomorrow
         slots = []
-        next_monday = datetime.now() + timedelta(days=(7 - datetime.now().weekday()))
+        tomorrow = now + timedelta(days=1)
         for i in range(3):
-            d = next_monday + timedelta(days=i)
+            # Skip weekends in fallback
+            d = tomorrow + timedelta(days=i)
+            if d.weekday() >= 5: # Sat or Sun
+                d += timedelta(days=2)
+            
             slots.append({
-                "datetime_utc": d.replace(hour=10, minute=0).isoformat(),
+                "datetime_utc": d.replace(hour=10, minute=0, second=0, microsecond=0).isoformat(),
                 "day_label": d.strftime("%A, %b %d"),
                 "time_recruiter": "10:00 AM",
                 "time_candidate": "10:00 AM",
