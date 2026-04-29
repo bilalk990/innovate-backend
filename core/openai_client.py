@@ -810,14 +810,22 @@ Ensure category is one of: technical, behavioral, general.
 Ensure difficulty is one of: easy, medium, hard.
 """
     try:
+        logger.info(f'[GPT] Question bank generation starting: job_title={job_title}, num_questions={num_questions}')
         result_text = _call(prompt, user_id=user_id, response_format="json")
+        logger.info(f'[GPT] Raw AI response (first 500 chars): {result_text[:500]}')
         stripped = _strip_json(result_text)
+        logger.info(f'[GPT] Stripped JSON (first 500 chars): {stripped[:500]}')
         data = json.loads(stripped)
         questions = data.get('questions', []) if isinstance(data, dict) else data
-        return questions[:num_questions] if isinstance(questions, list) else []
+        result = questions[:num_questions] if isinstance(questions, list) else []
+        logger.info(f'[GPT] Question bank generation SUCCESS: {len(result)} questions generated')
+        return result
+    except json.JSONDecodeError as e:
+        logger.error(f'[GPT] Question bank JSON parse failed: {e} | Raw text: {result_text[:300] if "result_text" in dir() else "N/A"}')
+        raise Exception(f'AI returned invalid JSON: {str(e)}')
     except Exception as e:
-        logger.error(f'[GPT] Question bank generation failed: {e}')
-        return []
+        logger.error(f'[GPT] Question bank generation failed: {type(e).__name__}: {e}')
+        raise
 
 
 def suggest_next_question(
