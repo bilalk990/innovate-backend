@@ -79,6 +79,12 @@ class Evaluation(me.Document):
     tab_switch_count = me.IntField(default=0)          # Number of proctoring violations
     culture_fit_score = me.FloatField(default=0)       # 0-100 analysis vs company values
 
+    # Detailed analysis fields
+    question_analysis = me.DictField(default=dict)
+    emotion_timeline = me.DictField(default=dict)
+    recommendation_reason = me.StringField(default='')
+    performance_stats = me.DictField(default=dict)
+
     status = me.StringField(
         choices=['pending', 'processing', 'complete'],
         default='pending'
@@ -166,6 +172,10 @@ class Evaluation(me.Document):
             'integrity_notes': self.integrity_notes,
             'tab_switch_count': self.tab_switch_count,
             'culture_fit_score': self.culture_fit_score,
+            'question_analysis': self.question_analysis or {},
+            'emotion_timeline': self.emotion_timeline or {},
+            'recommendation_reason': self.recommendation_reason,
+            'performance_stats': self.performance_stats or {},
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

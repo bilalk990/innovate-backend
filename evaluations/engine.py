@@ -288,6 +288,137 @@ def _fallback_summary(overall):
     return 'Candidate did not meet the minimum performance threshold.'
 
 
+def analyze_questions_performance(interview, responses: dict) -> dict:
+    """Analyze each question's performance individually."""
+    questions = interview.questions or []
+    question_scores = []
+    total_response_length = 0
+    answered_count = 0
+
+    for idx, question in enumerate(questions):
+        response_text = responses.get(str(idx), '') if isinstance(responses, dict) else ''
+        if not response_text or len(response_text.strip()) < 10:
+            question_scores.append({
+                'question_text': getattr(question, 'text', ''),
+                'question_index': idx,
+                'response_length': 0,
+                'score': 0,
+                'status': 'skipped',
+                'keywords_matched': 0,
+                'keywords_total': len(getattr(question, 'expected_keywords', []) or []),
+            })
+            continue
+
+        answered_count += 1
+        words = response_text.split()
+        response_length = len(words)
+        total_response_length += response_length
+
+        keywords = getattr(question, 'expected_keywords', []) or []
+        matched_keywords = sum(1 for kw in keywords if kw.lower() in response_text.lower())
+        keyword_score = (matched_keywords / len(keywords) * 10) if keywords else 5.0
+
+        if 50 <= response_length <= 200:
+            length_score = 10
+        elif 30 <= response_length < 50 or 200 < response_length <= 300:
+            length_score = 7
+        elif 15 <= response_length < 30 or 300 < response_length <= 400:
+            length_score = 5
+        else:
+            length_score = 3
+
+        final_score = round(keyword_score * 0.6 + length_score * 0.4, 1)
+        status = ('excellent' if final_score >= 8 else
+                  'good' if final_score >= 6 else
+                  'fair' if final_score >= 4 else 'poor')
+
+        question_scores.append({
+            'question_text': getattr(question, 'text', ''),
+            'question_index': idx,
+            'response_length': response_length,
+            'score': final_score,
+            'status': status,
+            'keywords_matched': matched_keywords,
+            'keywords_total': len(keywords),
+        })
+
+    answered_scores = [q for q in question_scores if q['status'] != 'skipped']
+    best_idx = max(range(len(answered_scores)), key=lambda i: answered_scores[i]['score']) if answered_scores else -1
+    worst_idx = min(range(len(answered_scores)), key=lambda i: answered_scores[i]['score']) if answered_scores else -1
+
+    return {
+        'total_questions': len(questions),
+        'answered_questions': answered_count,
+        'skipped_questions': len(questions) - answered_count,
+        'question_scores': question_scores,
+        'average_response_length': total_response_length // answered_count if answered_count > 0 else 0,
+        'best_question_index': answered_scores[best_idx]['question_index'] if best_idx >= 0 else -1,
+        'worst_question_index': answered_scores[worst_idx]['question_index'] if worst_idx >= 0 else -1,
+    }
+
+
+def analyze_emotion_timeline(interview) -> dict:
+    """Analyze emotion changes throughout the interview."""
+    from collections import Counter
+    emotion_data = getattr(interview, 'emotion_snapshots', []) or []
+
+    if not emotion_data:
+        return {
+            'emotion_snapshots': [],
+            'dominant_emotion': 'neutral',
+            'emotion_stability': 75,
+            'confidence_trend': 'stable',
+            'average_confidence': 70,
+        }
+
+    emotions = []
+    confidences = []
+    for snap in emotion_data:
+        if isinstance(snap, dict):
+            emotions.append(snap.get('emotion', 'neutral'))
+            confidences.append(snap.get('confidence', 0.5) * 100)
+
+    from collections import Counter
+    emotion_counts = Counter(emotions)
+    dominant_emotion = emotion_counts.most_common(1)[0][0] if emotions else 'neutral'
+    emotion_stability = round(emotion_counts[dominant_emotion] / len(emotions) * 100, 1) if emotions else 75
+
+    confidence_trend = 'stable'
+    if len(confidences) >= 3:
+        third = max(len(confidences) // 3, 1)
+        first_avg = sum(confidences[:third]) / third
+        last_avg = sum(confidences[-third:]) / third
+        if last_avg > first_avg + 10:
+            confidence_trend = 'improving'
+        elif last_avg < first_avg - 10:
+            confidence_trend = 'declining'
+
+    return {
+        'emotion_snapshots': emotion_data[:20],
+        'dominant_emotion': dominant_emotion,
+        'emotion_stability': emotion_stability,
+        'confidence_trend': confidence_trend,
+        'average_confidence': round(sum(confidences) / len(confidences), 1) if confidences else 70,
+    }
+
+
+def determine_recommendation(overall_score: float, integrity_score: float, technical_score: float, violations_count: int) -> tuple:
+    """Returns (recommendation, detailed_reason)"""
+    if integrity_score < 50 or violations_count > 5:
+        return 'strong_no', f'Integrity concerns: {violations_count} violations detected. Integrity score: {integrity_score}/100.'
+    if overall_score >= 80 and technical_score >= 75 and integrity_score >= 80:
+        return 'strong_yes', f'Excellent performance across all areas. Overall: {overall_score}/100, Technical: {technical_score}/100.'
+    elif overall_score >= 70 and technical_score >= 65:
+        return 'yes', f'Strong candidate with minor areas for improvement. Overall: {overall_score}/100.'
+    elif overall_score >= 55:
+        if technical_score < 60:
+            return 'maybe', f'Technical skills need verification. Consider a technical round. Score: {technical_score}/100.'
+        return 'maybe', f'Borderline candidate. Recommend panel review. Overall: {overall_score}/100.'
+    elif overall_score >= 40:
+        return 'no', f'Below hiring threshold. Overall: {overall_score}/100. Consider for junior roles.'
+    return 'strong_no', f'Significant gaps in required skills. Overall: {overall_score}/100.'
+
+
 # ─── Main evaluation engine ───────────────────────────────────────────────────
 
 def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
@@ -401,17 +532,14 @@ def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
     # Overall weighted score (0–100)
     overall = round((weighted_total / total_weight) * 10, 1) if total_weight > 0 else 50.0
 
-    # Recommendation logic
-    if overall >= 80:
-        recommendation = 'strong_yes'
-    elif overall >= 65:
-        recommendation = 'yes'
-    elif overall >= 50:
-        recommendation = 'maybe'
-    elif overall >= 35:
-        recommendation = 'no'
-    else:
-        recommendation = 'strong_no'
+    # Recommendation logic — use detailed version
+    integrity_score_val = integrity.get('integrity_score', 100)
+    technical_cr = next((r for r in all_criterion_results if r['criterion'] == 'keyword_alignment'), None)
+    technical_score_val = (technical_cr['score'] * 10) if technical_cr else overall
+    tab_switches = getattr(interview, 'tab_switch_count', 0)
+    recommendation, recommendation_reason = determine_recommendation(
+        overall, integrity_score_val, technical_score_val, tab_switches
+    )
 
     # Generate summary (AI-enhanced if available)
     ai_summary_used = False
@@ -513,8 +641,6 @@ def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
                 culture_fit = {"culture_score": 50}
 
     # Proctoring score: deduct 10 per tab switch, min 0
-    # Also if no responses provided, integrity cannot be verified
-    tab_switches = getattr(interview, 'tab_switch_count', 0)
     proctoring_score_from_violations = max(0, 100 - (tab_switches * 10))
     
     if not responses:
@@ -522,10 +648,27 @@ def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
     else:
         proctoring_score = min(integrity.get('integrity_score', 100), proctoring_score_from_violations)
 
+    # Question analysis and emotion timeline
+    question_analysis = analyze_questions_performance(interview, responses)
+    emotion_timeline = analyze_emotion_timeline(interview)
+
+    # Performance stats
+    full_transcript = ' '.join(str(v) for v in responses.values()) if responses else ''
+    duration_minutes = getattr(interview, 'duration_minutes', 0) or 1
+    performance_stats = {
+        'total_interview_duration_minutes': duration_minutes,
+        'total_words_spoken': len(full_transcript.split()) if full_transcript else 0,
+        'average_words_per_minute': round(len(full_transcript.split()) / duration_minutes, 1) if full_transcript else 0,
+        'questions_answered_percentage': round(
+            question_analysis['answered_questions'] / question_analysis['total_questions'] * 100, 1
+        ) if question_analysis['total_questions'] > 0 else 0,
+    }
+
     return {
         'criterion_results': all_criterion_results,
         'overall_score': overall,
         'recommendation': recommendation,
+        'recommendation_reason': recommendation_reason,
         'summary': summary,
         'strengths': strengths,
         'weaknesses': weaknesses,
@@ -537,5 +680,8 @@ def run_xai_evaluation(interview, resume_parsed_data=None, user_id: str = None):
         'tab_switch_count': tab_switches,
         'resume_alignment_score': job_fit.get('fitment_score', resume_alignment_fallback),
         'culture_fit_score': culture_fit.get('culture_score', 70),
-        'ai_summary_used': ai_summary_used,  # #52
+        'ai_summary_used': ai_summary_used,
+        'question_analysis': question_analysis,
+        'emotion_timeline': emotion_timeline,
+        'performance_stats': performance_stats,
     }
