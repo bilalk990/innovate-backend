@@ -135,6 +135,25 @@ class Evaluation(me.Document):
         except Exception:
             pass
 
+        # Map backend recommendation format to frontend format
+        recommendation_map = {
+            'strong_yes': 'HIRE',
+            'yes': 'HIRE',
+            'maybe': 'MAYBE',
+            'no': 'REJECT',
+            'strong_no': 'REJECT'
+        }
+        frontend_recommendation = recommendation_map.get(self.recommendation, 'MAYBE')
+
+        # Map confidence_score to confidence level
+        confidence_level = 'MEDIUM'
+        if self.confidence_score >= 80:
+            confidence_level = 'HIGH'
+        elif self.confidence_score >= 50:
+            confidence_level = 'MEDIUM'
+        else:
+            confidence_level = 'LOW'
+
         return {
             'id': str(self.id),
             'interview_id': self.interview_id,
@@ -155,7 +174,8 @@ class Evaluation(me.Document):
                 for cr in self.criterion_results
             ],
             'overall_score': self.overall_score,
-            'recommendation': self.recommendation,
+            'recommendation': frontend_recommendation,
+            'confidence': confidence_level,
             'summary': self.summary,
             'strengths': self.strengths,
             'weaknesses': self.weaknesses,
@@ -170,6 +190,7 @@ class Evaluation(me.Document):
             'behavioral_summary': self.behavioral_summary,
             'proctoring_score': self.proctoring_score,
             'integrity_notes': self.integrity_notes,
+            'violations_count': self.tab_switch_count,  # Map tab_switch_count to violations_count for frontend
             'tab_switch_count': self.tab_switch_count,
             'culture_fit_score': self.culture_fit_score,
             'question_analysis': self.question_analysis or {},
