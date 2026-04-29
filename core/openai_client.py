@@ -115,6 +115,7 @@ def _call(prompt: str, user_id: str = None, response_format: str = "text", max_t
         }
         if response_format == "json":
             kwargs["response_format"] = {"type": "json_object"}
+            kwargs["messages"][0]["content"] += " You must respond in valid JSON format."
 
         response = client.chat.completions.create(**kwargs)
         return response.choices[0].message.content.strip()
@@ -307,18 +308,20 @@ You are an expert HR interviewer. Generate {num_questions} high-quality intervie
 CONTEXT:
 {context_str}
 
-Return ONLY a valid JSON object with a "questions" key:
+Return ONLY a strictly valid JSON object with a "questions" key:
 {{
   "questions": [
     {{
       "text": "Question text",
-      "category": "technical" or "behavioral" or "general",
+      "category": "technical",
       "expected_keywords": ["keyword1", "keyword2"],
       "ideal_answer": "What a perfect candidate would say",
-      "difficulty": "easy" or "medium" or "hard"
+      "difficulty": "medium"
     }}
   ]
 }}
+Ensure category is one of: technical, behavioral, general.
+Ensure difficulty is one of: easy, medium, hard.
 """
     try:
         result_text = _call(prompt, user_id=user_id, response_format="json")
@@ -796,13 +799,15 @@ Return a JSON object with a "questions" key:
   "questions": [
     {{
       "text": "Question text",
-      "category": "technical" | "behavioral" | "general",
-      "difficulty": "easy" | "medium" | "hard",
+      "category": "technical",
+      "difficulty": "medium",
       "expected_keywords": ["keyword1"],
       "ideal_answer": "Brief ideal answer"
     }}
   ]
 }}
+Ensure category is one of: technical, behavioral, general.
+Ensure difficulty is one of: easy, medium, hard.
 """
     try:
         result_text = _call(prompt, user_id=user_id, response_format="json")
