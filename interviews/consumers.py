@@ -133,12 +133,13 @@ class SignalingConsumer(AsyncWebsocketConsumer):
             )
             logger.info(f'[WS] Recruiter connected to room: {self.room_id}')
         else:
-            # Candidate just joined — notify recruiter that someone is at the door
+            # CRITICAL FIX: Candidate immediately notifies recruiter on connection
+            # Don't wait for frontend to send request_admit
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {'type': 'candidate_at_door', 'channel': self.channel_name}
+                {'type': 'candidate_at_door', 'channel': self.channel_name, 'force_notify': True}
             )
-            logger.info(f'[WS] Candidate entered waiting room: {self.room_id}')
+            logger.info(f'[WS] Candidate entered waiting room: {self.room_id}, notification sent')
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
@@ -188,6 +189,8 @@ class SignalingConsumer(AsyncWebsocketConsumer):
 
         # ── Waiting Room: Candidate re-announces they are waiting ──
         elif msg_type == 'request_admit':
+            # CRITICAL FIX: Add extensive logging and force notification
+            logger.info(f'[WS] Candidate {self.channel_name} requesting admission in room {self.room_id}')
             # Relay to group so recruiter (who may have just joined) sees the request
             # CRITICAL: This should ALWAYS notify, even if notified before
             await self.channel_layer.group_send(
@@ -198,6 +201,7 @@ class SignalingConsumer(AsyncWebsocketConsumer):
                     'force_notify': True,  # Force notification even if already notified
                 }
             )
+            logger.info(f'[WS] Sent candidate_at_door notification to group {self.room_group_name}')
 
         # ── Waiting Room: Recruiter joins and checks for waiting candidates ──
         elif msg_type == 'recruiter_joined':
@@ -293,13 +297,12 @@ class SignalingConsumer(AsyncWebsocketConsumer):
         # Only send to recruiters/admins (not back to the candidate who sent it)
         if event.get('channel') != self.channel_name:
             if getattr(self, 'user_role', 'candidate') in ('recruiter', 'admin'):
-                # Check if this is a forced notification (from request_admit)
-                force_notify = event.get('force_notify', False)
-                
-                # Only send if we haven't already notified OR if it's a forced notification
-                if force_notify or not hasattr(self, '_candidate_notified'):
-                    await self.send(text_data=json.dumps({'type': 'candidate_waiting'}))
-                    self._candidate_notified = True
+                # CRITICAL FIX: Always send notification, remove the flag check
+                # The flag was preventing notifications from being sent
+                await self.send(text_data=json.dumps({'type': 'candidate_waiting'}))
+                logger.info(f'[WS] Sent candidate_waiting notification to recruiter in room {self.room_id}')
+                # Set flag after sending (for tracking only, not blocking)
+                self._candidate_notified = True
 
     async def candidate_left_door(self, event):
         """Notify recruiter that a candidate is no longer waiting."""
