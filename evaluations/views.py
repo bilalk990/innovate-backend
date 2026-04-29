@@ -62,81 +62,101 @@ class TriggerEvaluationView(APIView):
         if existing:
             return Response(existing.to_dict(), status=200)
 
-        # Run XAI engine with error handling — pass recruiter's user_id for rate limiting
-        try:
-            result = run_xai_evaluation(interview, resume_data, user_id=str(request.user.id))
-        except Exception as e:
-            import logging
-            logging.getLogger('innovaite').error(f'Evaluation failed for interview {interview.id}: {e}')
-            return Response({'error': f'Evaluation engine failed: {str(e)}'}, status=500)
-
-        # Build embedded criterion results
-        criterion_docs = []
-        for cr in result['criterion_results']:
-            criterion_docs.append(CriterionResult(
-                criterion=cr['criterion'],
-                score=cr['score'],
-                max_score=cr['max_score'],
-                weight=cr['weight'],
-                explanation=cr['explanation'],
-                rules_applied=cr['rules_applied'],
-                evidence=cr['evidence'],
-            ))
-
+        # Create a placeholder evaluation with 'processing' status
         evaluation = Evaluation(
             interview_id=str(interview.id),
             candidate_id=interview.candidate_id,
             recruiter_id=str(request.user.id),
-            criterion_results=criterion_docs,
-            overall_score=result['overall_score'],
-            recommendation=result['recommendation'],
-            summary=result['summary'],
-            strengths=result['strengths'],
-            weaknesses=result['weaknesses'],
-            resume_alignment_score=result.get('resume_alignment_score', 0),
-            
-            # Enterprise metrics
-            confidence_score=result.get('confidence_score', 50),
-            fluency_score=result.get('fluency_score', 50),
-            behavioral_summary=result.get('behavioral_summary', ''),
-            proctoring_score=result.get('proctoring_score', 100),
-            integrity_notes=result.get('integrity_notes', ''),
-            tab_switch_count=result.get('tab_switch_count', 0),
-            culture_fit_score=result.get('culture_fit_score', 0),
-            
-            ai_summary_used=result.get('ai_summary_used', False),
-            status='complete',
+            status='processing',
         )
         evaluation.save()
 
-        # Mark interview as completed
-        interview.status = 'completed'
-        interview.save()
-        
-        # Audit log
-        log_evaluation_triggered(request.user, str(evaluation.id), request)
+        # Run evaluation in background thread — no Celery needed
+        import threading
 
-        # Notify candidate via email
-        try:
-            candidate = User.objects.get(id=interview.candidate_id)
-            send_evaluation_ready_email(
-                candidate_email=candidate.email,
-                candidate_name=candidate.name,
-                evaluation_data=evaluation.to_dict()
-            )
-        except Exception as e:
-            logger.warning(f"[Email] Failed to notify candidate: {str(e)}")
+        def _run_eval():
+            try:
+                result = run_xai_evaluation(interview, resume_data, user_id=str(request.user.id))
 
-        # Notify recruiter
-        Notification(
-            recipient_id=str(request.user.id),
-            notification_type='evaluation_ready',
-            title='Evaluation Complete',
-            message=f'XAI Evaluation for "{interview.title}" is ready for review.',
-            link=f'/evaluation/{str(evaluation.id)}'
-        ).save()
+                criterion_docs = []
+                for cr in result['criterion_results']:
+                    criterion_docs.append(CriterionResult(
+                        criterion=cr['criterion'],
+                        score=cr['score'],
+                        max_score=cr['max_score'],
+                        weight=cr['weight'],
+                        explanation=cr['explanation'],
+                        rules_applied=cr['rules_applied'],
+                        evidence=cr['evidence'],
+                    ))
 
-        return Response(evaluation.to_dict(), status=201)
+                evaluation.criterion_results = criterion_docs
+                evaluation.overall_score = result['overall_score']
+                evaluation.recommendation = result['recommendation']
+                evaluation.summary = result['summary']
+                evaluation.strengths = result['strengths']
+                evaluation.weaknesses = result['weaknesses']
+                evaluation.resume_alignment_score = result.get('resume_alignment_score', 0)
+                evaluation.confidence_score = result.get('confidence_score', 50)
+                evaluation.fluency_score = result.get('fluency_score', 50)
+                evaluation.behavioral_summary = result.get('behavioral_summary', '')
+                evaluation.proctoring_score = result.get('proctoring_score', 100)
+                evaluation.integrity_notes = result.get('integrity_notes', '')
+                evaluation.tab_switch_count = result.get('tab_switch_count', 0)
+                evaluation.culture_fit_score = result.get('culture_fit_score', 0)
+                evaluation.ai_summary_used = result.get('ai_summary_used', False)
+                evaluation.question_analysis = result.get('question_analysis', {})
+                evaluation.emotion_timeline = result.get('emotion_timeline', {})
+                evaluation.recommendation_reason = result.get('recommendation_reason', '')
+                evaluation.performance_stats = result.get('performance_stats', {})
+                evaluation.status = 'complete'
+                evaluation.updated_at = datetime.utcnow()
+                evaluation.save()
+
+                # Mark interview as completed
+                interview.status = 'completed'
+                interview.save()
+
+                # Audit log
+                log_evaluation_triggered(None, str(evaluation.id), None)
+
+                # Notify candidate via email
+                try:
+                    candidate = User.objects.get(id=interview.candidate_id)
+                    send_evaluation_ready_email(
+                        candidate_email=candidate.email,
+                        candidate_name=candidate.name,
+                        evaluation_data=evaluation.to_dict()
+                    )
+                except Exception as e:
+                    logger.warning(f"[Email] Failed to notify candidate: {str(e)}")
+
+                # Notify recruiter
+                Notification(
+                    recipient_id=str(request.user.id),
+                    notification_type='evaluation_ready',
+                    title='Evaluation Complete',
+                    message=f'XAI Evaluation for "{interview.title}" is ready for review.',
+                    link=f'/evaluation/{str(evaluation.id)}'
+                ).save()
+
+                logger.info(f'[EVAL] Background evaluation complete for interview {interview.id}')
+
+            except Exception as e:
+                logger.error(f'[EVAL] Background evaluation failed for interview {interview.id}: {e}')
+                evaluation.status = 'failed'
+                evaluation.summary = f'Evaluation failed: {str(e)}'
+                evaluation.save()
+
+        thread = threading.Thread(target=_run_eval, daemon=True)
+        thread.start()
+
+        # Return 202 immediately — frontend should poll
+        return Response({
+            **evaluation.to_dict(),
+            'status': 'processing',
+            'message': 'Evaluation is being generated. Poll this endpoint to check status.',
+        }, status=202)
 
 
 class EvaluationShareView(APIView):
