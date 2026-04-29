@@ -25,14 +25,25 @@ class JobListView(APIView):
         # Candidates and guests see active jobs
         # Recruiters see their own jobs
         user_role = getattr(request.user, 'role', None)
-        
+        search_query = request.query_params.get('search', '').strip()
+
         if not request.user.is_authenticated or user_role == 'candidate':
             jobs = Job.objects(is_active=True)
         elif user_role == 'recruiter':
             jobs = Job.objects(posted_by=str(request.user.id))
         else:
             jobs = Job.objects(is_active=True)
-            
+
+        if search_query:
+            from mongoengine import Q
+            jobs = jobs.filter(
+                Q(title__icontains=search_query) |
+                Q(description__icontains=search_query) |
+                Q(company_name__icontains=search_query) |
+                Q(requirements__icontains=search_query)
+            )
+            logger.info(f'[JobSearch] Query: "{search_query}", Results: {jobs.count()}')
+
         results = []
         for j in jobs:
             jd = j.to_dict()
@@ -43,7 +54,7 @@ class JobListView(APIView):
             except Exception:
                 jd['company_description'] = None
             results.append(jd)
-            
+
         return Response(results)
 
     def post(self, request):
