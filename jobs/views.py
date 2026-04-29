@@ -40,6 +40,7 @@ class JobListView(APIView):
                 Q(title__icontains=search_query) |
                 Q(description__icontains=search_query) |
                 Q(company_name__icontains=search_query) |
+                Q(location__icontains=search_query) |
                 Q(requirements__icontains=search_query)
             )
             logger.info(f'[JobSearch] Query: "{search_query}", Results: {jobs.count()}')
