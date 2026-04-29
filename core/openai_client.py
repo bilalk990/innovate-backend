@@ -262,7 +262,7 @@ RESUME TEXT:
 {text_chunk}
 """
     try:
-        result_text = _call(prompt, response_format="json")
+        result_text = _call(prompt, user_id=user_id, response_format="json")
         stripped = _strip_json(result_text)
         parsed = json.loads(stripped)
 
@@ -286,7 +286,7 @@ RESUME TEXT:
 
         parsed['skills'] = [str(s).strip() for s in parsed['skills'] if s]
         parsed['raw_text'] = raw_text[:3000]
-        logger.info(f'[Resume AI] Parsed {len(parsed["skills"])} skills via GPT.')
+        logger.info(f'[Resume AI] Parsed: name={parsed.get("name")}, skills={len(parsed["skills"])}, experience={len(parsed.get("experience", []))} via GPT.')
         return parsed
 
     except json.JSONDecodeError as e:

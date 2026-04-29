@@ -323,24 +323,28 @@ class ResumeUploadView(APIView):
             logger.info(f'[Resume] Starting synchronous parse for {resume.id} on Vercel/Railway')
             parsed = parse_resume(file_path, ext)
             
-            # Log what was parsed
-            logger.info(f'[Resume] Parsed data: name={parsed.get("name")}, skills_count={len(parsed.get("skills", []))}, parsed_by={parsed.get("parsed_by")}')
+            # Enhanced logging with more detail
+            logger.info(f'[Resume] Parsed data: name={parsed.get("name")}, skills_count={len(parsed.get("skills", []))}, experience_count={len(parsed.get("experience", []))}, parsed_by={parsed.get("parsed_by")}')
             
             resume.parsed_data = parsed
             
-            # Success criteria
+            # Success criteria — lenient, any meaningful field counts
             has_name = bool(parsed.get('name') and len(str(parsed.get('name')).strip()) > 2)
             has_skills = bool(parsed.get('skills') and len(parsed.get('skills', [])) > 0)
             has_email = bool(parsed.get('email'))
             has_experience = bool(parsed.get('experience') and len(parsed.get('experience', [])) > 0)
+            has_education = bool(parsed.get('education') and len(parsed.get('education', [])) > 0)
+            has_summary = bool(parsed.get('summary') and len(str(parsed.get('summary')).strip()) > 10)
             
-            success_count = sum([has_name, has_skills, has_email, has_experience])
+            success_count = sum([has_name, has_skills, has_email, has_experience, has_education, has_summary])
             
-            if success_count >= 1: # Be more lenient for synchronous success
-                resume.parse_status = 'parsed'
-                logger.info(f'[Resume] Parse SUCCESS - {success_count} fields found')
+            if success_count >= 1:
+                resume.parse_status = 'completed'  # Frontend expects 'completed'
+                logger.info(f'[Resume] Parse SUCCESS - {success_count}/6 fields found')
             else:
                 resume.parse_status = 'failed'
+                # Save raw_text so frontend can still show something
+                resume.parsed_data = {'error': 'Could not extract structured data', 'raw_text': parsed.get('raw_text', '')}
                 logger.warning(f'[Resume] Parse FAILED - insufficient fields found.')
             
             resume.parsed_by_ai = parsed.get('parsed_by') == 'openai-gpt'
