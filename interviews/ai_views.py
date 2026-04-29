@@ -411,6 +411,18 @@ class QuestionBankAIGenerateView(APIView):
         if not job_title:
             return Response({'error': 'job_title is required.'}, status=400)
 
+        # CRITICAL DEBUG: Log API key status
+        from django.conf import settings
+        api_key = settings.OPENAI_API_KEY
+        logger.info(f'[QuestionBank] API Key Status: {"SET" if api_key else "MISSING"} (length: {len(api_key) if api_key else 0})')
+        
+        if not api_key:
+            logger.error('[QuestionBank] OPENAI_API_KEY is not set in environment!')
+            return Response({
+                'error': 'AI service is not configured. OPENAI_API_KEY environment variable is missing.',
+                'error_type': 'AI_KEY_INVALID'
+            }, status=503)
+
         try:
             questions = generate_question_bank_suggestions(
                 job_title=job_title,
