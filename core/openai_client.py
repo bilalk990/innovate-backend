@@ -12,8 +12,20 @@ from core.rate_limiter import ai_rate_limiter
 
 logger = logging.getLogger('innovaite')
 
-# Configure OpenAI client
-client = OpenAI(api_key=settings.OPENAI_API_KEY)
+# Configure OpenAI client with lazy initialization
+_client = None
+
+def _get_client():
+    """Lazy-load OpenAI client to ensure API key is loaded from settings."""
+    global _client
+    if _client is None:
+        api_key = settings.OPENAI_API_KEY
+        if not api_key:
+            logger.error('[AI] OPENAI_API_KEY not set in environment variables')
+            raise Exception('AI_KEY_INVALID')
+        _client = OpenAI(api_key=api_key)
+        logger.info('[AI] OpenAI client initialized successfully')
+    return _client
 
 # Use GPT-4o-mini (GPT-5.4 mini) — fast and cost-effective
 MODEL_NAME = "gpt-4o-mini"
@@ -104,6 +116,7 @@ def _call(prompt: str, user_id: str = None, response_format: str = "text", max_t
             logger.warning(f'[AI] Could not send quota warning notification: {notify_err}')
 
     try:
+        client = _get_client()
         kwargs = {
             "model": MODEL_NAME,
             "messages": [
@@ -811,7 +824,7 @@ Ensure difficulty is one of: easy, medium, hard.
 """
     try:
         logger.info(f'[GPT] Question bank generation starting: job_title={job_title}, num_questions={num_questions}')
-        result_text = _call(prompt, user_id=user_id, response_format="json")
+        result_text = _call(prompt, user_id=user_id)
         logger.info(f'[GPT] Raw AI response (first 500 chars): {result_text[:500]}')
         stripped = _strip_json(result_text)
         logger.info(f'[GPT] Stripped JSON (first 500 chars): {stripped[:500]}')

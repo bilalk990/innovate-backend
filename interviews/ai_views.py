@@ -421,10 +421,7 @@ class QuestionBankAIGenerateView(APIView):
             )
             return Response({'questions': questions, 'count': len(questions)})
         except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            logger.error(f'[QuestionBank] AI generation failed: {type(e).__name__}: {e}\n{tb}')
-            return Response({'error': f'AI generation failed: {str(e)}'}, status=500)
+            return handle_ai_error(e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
