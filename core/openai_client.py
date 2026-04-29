@@ -2695,20 +2695,20 @@ TASK:
 
 Return ONLY valid JSON:
 {{
-  "winner": "Candidate A",
+  "winner": "<Name of the winning candidate>",
   "winner_confidence": 0-100,
   "winner_reasoning": "2-3 sentence executive summary of why this candidate wins",
   "comparison_matrix": [
-    {{"criterion": "Technical Skills", "scores": {{}}, "winner": "Name", "insight": "..."}},
-    {{"criterion": "Communication", "scores": {{}}, "winner": "Name", "insight": "..."}},
-    {{"criterion": "Experience Depth", "scores": {{}}, "winner": "Name", "insight": "..."}},
-    {{"criterion": "Cultural Fit Potential", "scores": {{}}, "winner": "Name", "insight": "..."}},
-    {{"criterion": "Growth Potential", "scores": {{}}, "winner": "Name", "insight": "..."}},
-    {{"criterion": "Risk Factor", "scores": {{}}, "winner": "Name", "insight": "..."}}
+    {{"criterion": "Technical Skills", "scores": {{}}, "winner": "<Name>", "insight": "..."}},
+    {{"criterion": "Communication", "scores": {{}}, "winner": "<Name>", "insight": "..."}},
+    {{"criterion": "Experience Depth", "scores": {{}}, "winner": "<Name>", "insight": "..."}},
+    {{"criterion": "Cultural Fit Potential", "scores": {{}}, "winner": "<Name>", "insight": "..."}},
+    {{"criterion": "Growth Potential", "scores": {{}}, "winner": "<Name>", "insight": "..."}},
+    {{"criterion": "Risk Factor", "scores": {{}}, "winner": "<Name>", "insight": "..."}}
   ],
   "individual_profiles": [
     {{
-      "label": "Candidate A",
+      "label": "<Name of Candidate>",
       "hire_probability": 0-100,
       "top_strengths": ["strength1", "strength2", "strength3"],
       "top_concerns": ["concern1", "concern2"],
